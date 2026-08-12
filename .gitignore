@@ -1,0 +1,66 @@
+# Python runtime / bytecode
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Distribution / packaging
+build/
+dist/
+wheels/
+*.egg-info/
+.eggs/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# uv / dependency management
+# pyproject.toml and uv.lock should usually be committed
+.uv-cache/
+
+# Environment variables / secrets
+.env
+.env.*
+!.env.example
+
+# IDEs / editors
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# Testing / coverage
+.pytest_cache/
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
+.tox/
+.nox/
+
+# Linters / type checkers
+.mypy_cache/
+.ruff_cache/
+.pyre/
+.pytype/
+
+# Logs
+logs/
+*.log
+
+# Local databases / disposable data
+*.db
+*.sqlite
+*.sqlite3
+
+# Local Docker persistence, if you ever use bind mounts
+pgdata/
+postgres_data/
