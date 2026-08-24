@@ -1,27 +1,37 @@
-import os
-from dotenv import load_dotenv
 from datetime import datetime
-from sqlalchemy import ForeignKey, Enum, DateTime, func
-from sqlalchemy import CheckConstraint,String
+from sqlalchemy import (
+    ForeignKey,
+    Enum,
+    DateTime,
+    func,
+    MetaData,
+    CheckConstraint,String)
+
 from sqlalchemy.orm import (
-    DeclarativeBase,
     Mapped,
     mapped_column,
     relationship,
+    DeclarativeBase,
 )
 from sqlalchemy.ext.asyncio import (
     async_sessionmaker,
     create_async_engine,
 )
+from app.config import settings
 
-load_dotenv()
-DATABASE_URL= os.environ["DATABASE_URL"]
+CONVERSION = {
+    "ix": "ix_%(column_0_label)s",
+    "uq": "uq_%(table_name)s_%(column_0_name)s",
+    "ck": "ck_%(table_name)s_%(constraint_name)s",
+    "fk": "fk_%(table_name)s_%(column_0_name)s_%(referred_table_name)s",
+    "pk": "pk_%(table_name)s"
+}
 
 TransactionType = Enum("expense", "income", name= "transaction_type", create_type=True)
 CurrencyType = Enum("TOMAN", name="currency_type", create_type=True)
 
 class Base(DeclarativeBase):
-    pass
+    metadata = MetaData(naming_convention=CONVERSION)
 
 class Category(Base):
     __tablename__ = "categories"
@@ -67,12 +77,8 @@ class Transaction(Base):
     )
 
 
-engine = create_async_engine(DATABASE_URL, echo=True)
+engine = create_async_engine(settings.database_url, echo=True)
 async_db_session = async_sessionmaker(engine, expire_on_commit=False)
-
-async def init_db():
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
 
 async def get_session():
     async with async_db_session() as session:
