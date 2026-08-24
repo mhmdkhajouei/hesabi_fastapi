@@ -1,3 +1,5 @@
+<div dir="rtl" align="right">
+
 # Git Workflow & Repository Guidelines
 
 این مستند شامل استانداردهای مدیریت نسخه (Version Control)، قوانین پوش کردن کد و ساختار شاخه‌ها برای پروژه حسابی است.
@@ -68,3 +70,5 @@ git push -u origin feat/weekX-topic-name
 ثبت توضیحات خلاصه از کارهای انجام‌شده و کلیک روی Create pull request.
 
 بررسی نهایی تغییرات و کلیک روی Merge pull request و سپس Confirm merge.
+
+</div>

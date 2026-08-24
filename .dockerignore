@@ -1,0 +1,44 @@
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Python bytecode & cache
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Git metadata
+.git/
+.gitignore
+
+# Environment variables & secrets
+.env
+.env.*
+db_password.txt
+*.pem
+*.key
+
+# Documentation & planning docs (not needed in runtime)
+docs/
+README.md
+hesabi-24-point-roadmap.md
+GIT_WORKFLOW.md
+
+# Tests (can be ignored for production runtime image)
+tests/
+
+# Docker files & configs
+Dockerfile
+docker-compose.yml
+.dockerignore
+Makefile
+
+# IDEs & OS metadata
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db

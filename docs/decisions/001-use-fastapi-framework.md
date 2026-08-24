@@ -1,3 +1,5 @@
+<div dir="rtl" align="right">
+
 # ADR-001: Migration from Flask to FastAPI as the Primary Web Framework
 
 ## Status
@@ -51,3 +53,4 @@ Accepted
 * تحت چه شرایطی Flask را انتخاب می‌کردیم؟
 
   * اگر هدف پروژه صرفاً یک ابزار شخصی آفلاین (Self-hosted) بدون نیاز به مقیاس‌پذیری، هم‌زمانی و پشتیبانی از چند کاربر بود، Flask به دلیل سادگی اولیه گزینه منطقی‌تری به شمار می‌رفت.
+</div>
