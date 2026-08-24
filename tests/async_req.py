@@ -1,14 +1,12 @@
 import asyncio
+
 import httpx
 
 URL = "http://127.0.0.1:8000/api/v1/categories"
 
 
 async def send_request(client: httpx.AsyncClient, index: int):
-    payload = {
-        "name": f"Concurrent_Cat_{index}",
-        "budget_goal": 1000 + index
-    }
+    payload = {"name": f"Concurrent_Cat_{index}", "budget_goal": 1000 + index}
     response = await client.post(URL, json=payload)
     return response.status_code, response.json()
 

@@ -1,21 +1,26 @@
 from fastapi import HTTPException
+from sqlalchemy import delete, exists, select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, exists, delete
 from sqlalchemy.orm import (
-    selectinload, joinedload,
+    joinedload,
+    selectinload,
 )
-from app.database import Transaction,Budget,Category,get_session
+
+from app.database import Budget, Category, Transaction
+
 
 class BaseRepo:
     def __init__(self, session: AsyncSession):
         self.session = session
 
-class CategoryRepo(BaseRepo):
 
-    async def insert_category(self,data: dict) -> Category:
+class CategoryRepo(BaseRepo):
+    async def insert_category(self, data: dict) -> Category:
         budget_goal = data.pop("budget_goal", None)
         if budget_goal is None:
-            raise HTTPException(status_code=400, detail="category must have budget goal")
+            raise HTTPException(
+                status_code=400, detail="category must have budget goal"
+            )
         new_category = Category(**data)
         new_category.budget = Budget(goal=budget_goal)
         self.session.add(new_category)
@@ -23,7 +28,11 @@ class CategoryRepo(BaseRepo):
         return new_category
 
     async def update_category(self, id: int, data: dict) -> Category | None:
-        stmt = select(Category).options(joinedload(Category.budget)).where(Category.id == id)
+        stmt = (
+            select(Category)
+            .options(joinedload(Category.budget))
+            .where(Category.id == id)
+        )
         category = await self.session.scalar(stmt)
 
         if not category:
@@ -44,15 +53,19 @@ class CategoryRepo(BaseRepo):
         return result.rowcount > 0
 
     async def get_category(self, id: int) -> Category | None:
-        stmt = select(Category).options(joinedload(Category.budget)).where(Category.id == id)
+        stmt = (
+            select(Category)
+            .options(joinedload(Category.budget))
+            .where(Category.id == id)
+        )
         category = await self.session.scalar(stmt)
         return category
 
     async def get_all_categories(self):
         stmt = (
-            select(Category).
-            options(joinedload(Category.budget)).
-            order_by(Category.id.asc())
+            select(Category)
+            .options(joinedload(Category.budget))
+            .order_by(Category.id.asc())
         )
         result = (await self.session.scalars(stmt)).unique().all()
         return result
@@ -68,7 +81,6 @@ class BudgetRepo(BaseRepo):
 
 
 class TransactionRepo(BaseRepo):
-
     async def insert_transaction(self, data: dict) -> Transaction:
         new_transaction = Transaction(**data)
         self.session.add(new_transaction)
@@ -77,7 +89,11 @@ class TransactionRepo(BaseRepo):
         return new_transaction
 
     async def update_transaction(self, id: int, data: dict) -> Transaction | None:
-        stmt = select(Transaction).options(joinedload(Transaction.category)).where(Transaction.id == id)
+        stmt = (
+            select(Transaction)
+            .options(joinedload(Transaction.category))
+            .where(Transaction.id == id)
+        )
         transaction = await self.session.scalar(stmt)
         if transaction is None:
             return None
