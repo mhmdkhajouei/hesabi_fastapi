@@ -1,10 +1,9 @@
-from sqlalchemy import delete, exists, select, func, and_
+from sqlalchemy import and_, delete, exists, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import (
     joinedload,
     selectinload,
 )
-from sqlalchemy.sql.selectable import and_
 
 from app.db.models import Budget, Category, Transaction
 
@@ -77,7 +76,9 @@ class TransactionRepo(BaseRepo):
         await self.session.refresh(new_transaction)
         return new_transaction
 
-    async def update_transaction(self, transaction: Transaction ,data: dict) -> Transaction | None:
+    async def update_transaction(
+        self, transaction: Transaction, data: dict
+    ) -> Transaction | None:
 
         for field in ("amount", "type", "note", "category_id", "date"):
             if field in data:
@@ -118,49 +119,54 @@ class TransactionRepo(BaseRepo):
 
 
 class ComputeRepo(BaseRepo):
-
     async def get_total_amount_by_type(self, transaction_type: str) -> int:
-        stmt = select(
-            func.coalesce(func.sum(Transaction.amount), 0)
-        ).where(Transaction.type == transaction_type)
+        stmt = select(func.coalesce(func.sum(Transaction.amount), 0)).where(
+            Transaction.type == transaction_type
+        )
 
         result = await self.session.scalar(stmt)
         return int(result or 0)
 
     async def get_category_balance(self, category_id: int):
-        stmt= select(
-            Category.name.label("category_name"),
-            Budget.goal.label("budget_goal"),
-            func.coalesce(func.sum(Transaction.amount), 0).label("spent")
-        ).join(Budget, Category.id == Budget.category_id).outerjoin(
-            Transaction, and_(
-                Category.id == Transaction.category_id,
-                Transaction.type == "expense",
-            ),
-        ).where(Category.id == category_id).group_by(Category.id, Category.name, Budget.goal)
+        stmt = (
+            select(
+                Category.name.label("category_name"),
+                Budget.goal.label("budget_goal"),
+                func.coalesce(func.sum(Transaction.amount), 0).label("spent"),
+            )
+            .join(Budget, Category.id == Budget.category_id)
+            .outerjoin(
+                Transaction,
+                and_(
+                    Category.id == Transaction.category_id,
+                    Transaction.type == "expense",
+                ),
+            )
+            .where(Category.id == category_id)
+            .group_by(Category.id, Category.name, Budget.goal)
+        )
 
         result = await self.session.execute(stmt)
         return result.mappings().first()
 
     async def get_all_categories_balance(self):
-        stmt = select(
-            Category.name.label("category_name"),
-            Budget.goal.label("budget_goal"),
-            func.coalesce(func.sum(Transaction.amount), 0).label("spent")
-        ).join(Budget, Category.id == Budget.category_id).outerjoin(
-            Transaction, and_(
-                Category.id == Transaction.category_id,
-                Transaction.type == "expense",
-            ),
-        ).group_by(Category.id, Category.name, Budget.goal).order_by(Category.id.asc())
+        stmt = (
+            select(
+                Category.name.label("category_name"),
+                Budget.goal.label("budget_goal"),
+                func.coalesce(func.sum(Transaction.amount), 0).label("spent"),
+            )
+            .join(Budget, Category.id == Budget.category_id)
+            .outerjoin(
+                Transaction,
+                and_(
+                    Category.id == Transaction.category_id,
+                    Transaction.type == "expense",
+                ),
+            )
+            .group_by(Category.id, Category.name, Budget.goal)
+            .order_by(Category.id.asc())
+        )
 
         result = await self.session.execute(stmt)
         return result.mappings().all()
-
-
-
-
-
-
-
-

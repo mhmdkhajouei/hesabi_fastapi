@@ -1,13 +1,13 @@
 import asyncio
+
 from httpx import ASGITransport, AsyncClient
+
 from app.main import app
 
 
 async def run_pipeline_tests():
     transport = ASGITransport(app=app)
-    async with AsyncClient(
-        transport=transport, base_url="http://testserver"
-    ) as client:
+    async with AsyncClient(transport=transport, base_url="http://testserver") as client:
         print("--- ۱. تست تولید خودکار X-Request-Id و هدرهای امنیتی پایه ---")
         res_sec = await client.get("/docs")
         print("Status:", res_sec.status_code)
@@ -20,9 +20,7 @@ async def run_pipeline_tests():
 
         print("\n--- ۲. تست حفظ X-Request-Id ارسالی از سمت کلاینت ---")
         custom_req_id = "custom-client-trace-id-12345"
-        res_custom = await client.get(
-            "/docs", headers={"X-Request-Id": custom_req_id}
-        )
+        res_custom = await client.get("/docs", headers={"X-Request-Id": custom_req_id})
         print("Status:", res_custom.status_code)
         print("X-Request-Id (Preserved):", res_custom.headers.get("x-request-id"))
 

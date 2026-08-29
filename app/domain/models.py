@@ -1,7 +1,7 @@
 from dataclasses import dataclass
-from datetime import datetime, timezone
-from app.errors.exceptions import BusinessRuleError
+from datetime import UTC, datetime
 
+from app.errors.exceptions import BusinessRuleError
 
 
 @dataclass
@@ -28,11 +28,12 @@ class CategoryDomain:
                 error_code="CATEGORY_NAME_TOO_LONG",
             )
 
-        if self.budget_goal is  None or self.budget_goal <= 0:
+        if self.budget_goal is None or self.budget_goal <= 0:
             raise BusinessRuleError(
                 message="Budget goal must be strictly greater than zero",
                 error_code="INVALID_BUDGET_GOAL",
             )
+
 
 @dataclass
 class TransactionDomain:
@@ -50,27 +51,27 @@ class TransactionDomain:
         if self.amount is None or self.amount <= 0:
             raise BusinessRuleError(
                 message="Transaction amount must be strictly greater than zero",
-                error_code="INVALID_AMOUNT"
+                error_code="INVALID_AMOUNT",
             )
         if self.type not in ["income", "expense"]:
             raise BusinessRuleError(
                 message="Transaction type must be either income or expense",
-                error_code="INVALID_TRANSACTION_TYPE"
+                error_code="INVALID_TRANSACTION_TYPE",
             )
         if self.type == "income" and self.category_id is not None:
             raise BusinessRuleError(
                 message="Income transaction cannot reference a category",
-                error_code="INCOME_CATEGORY_CONFLICT"
+                error_code="INCOME_CATEGORY_CONFLICT",
             )
         if self.date:
             target_date = self.date
             if target_date.tzinfo is None:
-                target_date = target_date.replace(tzinfo=timezone.utc)
+                target_date = target_date.replace(tzinfo=UTC)
 
-            if target_date > datetime.now(timezone.utc):
+            if target_date > datetime.now(UTC):
                 raise BusinessRuleError(
                     message="Transaction date cannot be in the future",
-                    error_code="FUTURE_DATE_NOT_ALLOWED"
+                    error_code="FUTURE_DATE_NOT_ALLOWED",
                 )
 
         if self.note:
@@ -82,7 +83,3 @@ class TransactionDomain:
                 )
             if self.note == "":
                 self.note = None
-
-
-
-
