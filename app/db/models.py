@@ -20,7 +20,7 @@ from sqlalchemy.orm import (
     relationship,
 )
 
-from app.core.config import settings
+from app.config import settings
 
 CONVERSION = {
     "ix": "ix_%(column_0_label)s",

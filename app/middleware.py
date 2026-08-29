@@ -3,8 +3,7 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
 from starlette.responses import Response
-
-from app.core.config import settings
+from app.config import settings
 
 
 class SecurityAndTracingMiddleware(BaseHTTPMiddleware):

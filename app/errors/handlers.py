@@ -1,39 +1,30 @@
 from fastapi import FastAPI, Request
+from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
-from fastapi.encoders import jsonable_encoder
 from starlette.exceptions import HTTPException as StarletteHTTPException
+
 from app.errors.exceptions import AppError
 
-app = FastAPI()
 
-
-@app.exception_handler(AppError)
-async def custom_exception_errors(
-        request: Request,
-        exc: AppError
-):
+async def app_error_handler(request: Request, exc: AppError):
     return JSONResponse(
         status_code=exc.status_code,
         content={
             "success": False,
             "error_code": exc.error_code,
-            "message": exc.message
-        }
+            "message": exc.message,
+        },
     )
 
-@app.exception_handler(RequestValidationError)
-async def validation_errors(
-        request: Request,
-        exc: RequestValidationError
-):
-    errors = []
 
+async def validation_error_handler(request: Request, exc: RequestValidationError):
+    errors = []
     for error in exc.errors():
         field_path = "->".join(str(loc) for loc in error["loc"])
         errors.append({
             "field": field_path,
-            "message": error["msg"]
+            "message": error["msg"],
         })
 
     return JSONResponse(
@@ -44,21 +35,23 @@ async def validation_errors(
             "message": "Invalid request payload or query parameters",
             "errors": errors,
             "body": exc.body,
-        })
+        }),
     )
 
-@app.exception_handler(StarletteHTTPException)
-async def http_errors(
-        request: Request,
-        exc: StarletteHTTPException
-):
+
+async def http_error_handler(request: Request, exc: StarletteHTTPException):
     return JSONResponse(
         status_code=exc.status_code,
         content={
             "success": False,
             "error_code": f"HTTP_{exc.status_code}",
-            "message": str(exc.detail)
+            "message": str(exc.detail),
         },
         headers=exc.headers,
     )
 
+
+def register_exception_handlers(app: FastAPI) -> None:
+    app.add_exception_handler(AppError, app_error_handler)
+    app.add_exception_handler(RequestValidationError, validation_error_handler)
+    app.add_exception_handler(StarletteHTTPException, http_error_handler)
