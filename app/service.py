@@ -2,7 +2,7 @@ from dataclasses import asdict
 from datetime import UTC, datetime
 
 from app.db.crud import CategoryRepo, ComputeRepo, TransactionRepo
-from app.domain.models import CategoryDomain, TransactionDomain
+from app.domain_models import CategoryDomain, TransactionDomain
 from app.errors.exceptions import NotFoundError
 
 
@@ -52,6 +52,15 @@ class CategoryService:
             )
 
         return True
+
+    async def get_category(self, category_id: int):
+        category = await self.repo.get_category(category_id)
+        if not category:
+            raise NotFoundError(
+                message=f"Category with ID {category_id} not found",
+                error_code="CATEGORY_NOT_FOUND",
+            )
+        return category
 
     async def get_all_categories(self):
         return await self.repo.get_all_categories()
@@ -134,6 +143,16 @@ class TransactionService:
             )
 
         return True
+
+    async def get_transaction(self, transaction_id: int):
+        transaction = await self.repo.get_transaction(transaction_id)
+
+        if not transaction:
+            raise NotFoundError(
+                message=f"Transaction with id {transaction_id} not found",
+                error_code="TRANSACTION_NOT_FOUND",
+            )
+        return transaction
 
     async def get_all_transactions(self):
         return await self.repo.get_all_transactions()

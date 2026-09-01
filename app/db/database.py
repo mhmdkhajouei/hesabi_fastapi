@@ -47,6 +47,10 @@ class Category(Base):
     budget: Mapped["Budget"] = relationship(back_populates="category", uselist=False)
     transactions: Mapped[list["Transaction"]] = relationship(back_populates="category")
 
+    @property
+    def budget_goal(self) -> int | None:
+        return self.budget.goal if self.budget else None
+
 
 class Budget(Base):
     __tablename__ = "budgets"
@@ -89,6 +93,3 @@ engine = create_async_engine(settings.database_url, echo=True)
 async_db_session = async_sessionmaker(engine, expire_on_commit=False)
 
 
-async def get_session():
-    async with async_db_session() as session:
-        yield session

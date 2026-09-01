@@ -5,7 +5,7 @@ from sqlalchemy.orm import (
     selectinload,
 )
 
-from app.db.models import Budget, Category, Transaction
+from app.db.database import Budget, Category, Transaction
 
 
 class BaseRepo:

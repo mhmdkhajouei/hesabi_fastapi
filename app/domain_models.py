@@ -1,6 +1,5 @@
 from dataclasses import dataclass
 from datetime import UTC, datetime
-
 from app.errors.exceptions import BusinessRuleError
 
 
