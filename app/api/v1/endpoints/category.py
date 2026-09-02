@@ -1,9 +1,10 @@
 from typing import Annotated
 
+from fastapi import APIRouter, Depends, Path, status
+
 from app.dependencies import get_category_service
 from app.schemas import CategoryCreate, CategoryResponse, CategoryUpdate
 from app.service import CategoryService
-from fastapi import APIRouter, Depends, Path, status
 
 router = APIRouter()
 
@@ -11,6 +12,7 @@ router = APIRouter()
 @router.get(
     "/{category_id}",
     summary="Get single category",
+    description="Retrieve specific category details and its budget goal by ID.",
     status_code=status.HTTP_200_OK,
 )
 async def get_category(
@@ -23,6 +25,7 @@ async def get_category(
 @router.get(
     "/",
     summary="List of all categories",
+    description="Fetch a list of all expense and budget categories.",
     status_code=status.HTTP_200_OK,
 )
 async def get_all_categories(
@@ -34,6 +37,7 @@ async def get_all_categories(
 @router.post(
     "/",
     summary="Create category",
+    description="Create a new category alongside its assigned budget goal.",
     status_code=status.HTTP_201_CREATED,
 )
 async def create_category(
@@ -46,6 +50,7 @@ async def create_category(
 @router.patch(
     "/{category_id}",
     summary="Edit a category",
+    description="Partially update a category name or its budget goal. Only provided fields are updated.",
     status_code=status.HTTP_200_OK,
 )
 async def edit_category(
@@ -60,6 +65,7 @@ async def edit_category(
 @router.delete(
     "/{category_id}",
     summary="Delete a category",
+    description="Permanently delete a category and its associated budget from the database.",
     status_code=status.HTTP_204_NO_CONTENT,
 )
 async def delete_category(

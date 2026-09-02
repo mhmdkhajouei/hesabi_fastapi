@@ -1,9 +1,10 @@
 from typing import Annotated
 
+from fastapi import APIRouter, Depends, Path, status
+
 from app.dependencies import get_compute_service
 from app.schemas import CategoryBalanceResponse, FinancialSummaryResponse
 from app.service import ComputeService
-from fastapi import APIRouter, Depends, Path, status
 
 router = APIRouter()
 
@@ -11,6 +12,7 @@ router = APIRouter()
 @router.get(
     "/summary",
     summary="Get overall financial summary",
+    description="Aggregate all transactions to calculate total income, total expenses, and net balance.",
     status_code=status.HTTP_200_OK,
 )
 async def get_summary(
@@ -23,6 +25,7 @@ async def get_summary(
 @router.get(
     "/categories",
     summary="Get all categories",
+    description="Calculate budget utilization, total expenses, and remaining limits across all categories.",
     status_code=status.HTTP_200_OK,
 )
 async def get_all_categories(
@@ -35,6 +38,7 @@ async def get_all_categories(
 @router.get(
     "/{category_id}",
     summary="Get a single category",
+    description="Compute the spending progress and remaining budget for a specific category by ID.",
     status_code=status.HTTP_200_OK,
 )
 async def get_category(

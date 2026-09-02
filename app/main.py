@@ -7,6 +7,21 @@ from app.db.database import engine
 from app.errors.handlers import register_exception_handlers
 from app.middleware import register_middlewares
 
+tags_metadata = [
+    {
+        "name": "Categories",
+        "description": "Manage financial categories and set monthly budget goals.",
+    },
+    {
+        "name": "Transactions",
+        "description": "Record and manage income and expense transactions.",
+    },
+    {
+        "name": "Compute",
+        "description": "Calculate financial rollups, overall summaries, and category balance,",
+    },
+]
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -14,7 +29,13 @@ async def lifespan(app: FastAPI):
     await engine.dispose()
 
 
-app = FastAPI(lifespan=lifespan)
+app = FastAPI(
+    title="Hesabi API",
+    description="A comprehensive Personal Financial Management and Budget Tracking API.",
+    version="1.0.0",
+    openapi_tags=tags_metadata,
+    lifespan=lifespan,
+)
 
 register_middlewares(app)
 
