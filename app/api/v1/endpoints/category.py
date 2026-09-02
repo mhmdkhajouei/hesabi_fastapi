@@ -1,10 +1,9 @@
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Path, status
-
 from app.dependencies import get_category_service
 from app.schemas import CategoryCreate, CategoryResponse, CategoryUpdate
 from app.service import CategoryService
+from fastapi import APIRouter, Depends, Path, status
 
 router = APIRouter()
 

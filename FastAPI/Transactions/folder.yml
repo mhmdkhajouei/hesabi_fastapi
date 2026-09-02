@@ -1,0 +1,6 @@
+info:
+  name: Transactions
+  type: folder
+
+request:
+  auth: inherit

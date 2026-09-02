@@ -1,9 +1,10 @@
-from fastapi import Depends
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.util.typing import Annotated
 
-from app.db.crud import CategoryRepo, TransactionRepo
+from app.db.crud import CategoryRepo, ComputeRepo, TransactionRepo
 from app.db.database import async_db_session
-from app.service import CategoryService, TransactionService
+from app.service import CategoryService, ComputeService, TransactionService
+from fastapi import Depends
 
 
 async def get_session():
@@ -12,25 +13,37 @@ async def get_session():
 
 
 def get_category_repo(
-    session: AsyncSession = Depends(get_session),
+    session: Annotated[AsyncSession, Depends(get_session)],
 ) -> CategoryRepo:
     return CategoryRepo(session)
 
 
 def get_transaction_repo(
-    session: AsyncSession = Depends(get_session),
+    session: Annotated[AsyncSession, Depends(get_session)],
 ) -> TransactionRepo:
     return TransactionRepo(session)
 
 
 def get_category_service(
-    repo: CategoryRepo = Depends(get_category_repo),
+    repo: Annotated[CategoryRepo, Depends(get_category_repo)],
 ) -> CategoryService:
     return CategoryService(repo)
 
 
 def get_transaction_service(
-    repo: TransactionRepo = Depends(get_transaction_repo),
-    category_repo: CategoryRepo = Depends(get_category_repo),
+    repo: Annotated[TransactionRepo, Depends(get_transaction_repo)],
+    category_repo: Annotated[CategoryRepo, Depends(get_category_repo)],
 ) -> TransactionService:
     return TransactionService(repo, category_repo)
+
+
+def get_compute_repo(
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> ComputeRepo:
+    return ComputeRepo(session)
+
+
+def get_compute_service(
+    repo: Annotated[ComputeRepo, Depends(get_compute_repo)],
+) -> ComputeService:
+    return ComputeService(repo)
