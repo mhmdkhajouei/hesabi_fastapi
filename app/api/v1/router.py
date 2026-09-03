@@ -1,7 +1,8 @@
+from fastapi import APIRouter
+
 from app.api.v1.endpoints.category import router as category_route
 from app.api.v1.endpoints.compute import router as compute_route
 from app.api.v1.endpoints.transaction import router as transaction_route
-from fastapi import APIRouter
 
 v1_router = APIRouter(prefix="/api/v1")
 

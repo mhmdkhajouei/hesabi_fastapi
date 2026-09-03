@@ -23,7 +23,7 @@ class CategoryCreate(CategoryBase):
     pass
 
 
-class CategoryUpdate(CategoryBase):
+class CategoryUpdate(BaseModel):
     name: str | None = Field(
         default=None, min_length=1, max_length=20, examples=["Sport"]
     )
@@ -70,7 +70,7 @@ class TransactionCreate(TransactionBase):
     pass
 
 
-class TransactionUpdate(TransactionBase):
+class TransactionUpdate(BaseModel):
     model_config = ConfigDict(
         str_strip_whitespace=True,
         json_schema_extra={
