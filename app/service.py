@@ -2,7 +2,7 @@ from dataclasses import asdict
 from datetime import UTC, datetime
 
 from app.db.crud import CategoryRepo, ComputeRepo, TransactionRepo
-from app.domain.models import CategoryDomain, TransactionDomain
+from app.domain_models import CategoryDomain, TransactionDomain
 from app.errors.exceptions import NotFoundError
 
 
@@ -14,8 +14,8 @@ class CategoryService:
     async def add_category(self, data: dict):
 
         cd = CategoryDomain(
-            name=data.get("name"),
-            budget_goal=data.get("budget_goal"),
+            name=data["name"],
+            budget_goal=data["budget_goal"],
         )
 
         insert_data = asdict(cd)
@@ -53,6 +53,15 @@ class CategoryService:
 
         return True
 
+    async def get_category(self, category_id: int):
+        category = await self.repo.get_category(category_id)
+        if not category:
+            raise NotFoundError(
+                message=f"Category with ID {category_id} not found",
+                error_code="CATEGORY_NOT_FOUND",
+            )
+        return category
+
     async def get_all_categories(self):
         return await self.repo.get_all_categories()
 
@@ -68,8 +77,8 @@ class TransactionService:
         tx_date = data.get("date") or datetime.now(UTC)
 
         tx = TransactionDomain(
-            amount=data.get("amount"),
-            type=data.get("type"),
+            amount=data["amount"],
+            type=data["type"],
             category_id=data.get("category_id"),
             date=tx_date,
             note=data.get("note"),
@@ -135,6 +144,16 @@ class TransactionService:
 
         return True
 
+    async def get_transaction(self, transaction_id: int):
+        transaction = await self.repo.get_transaction(transaction_id)
+
+        if not transaction:
+            raise NotFoundError(
+                message=f"Transaction with id {transaction_id} not found",
+                error_code="TRANSACTION_NOT_FOUND",
+            )
+        return transaction
+
     async def get_all_transactions(self):
         return await self.repo.get_all_transactions()
 
@@ -143,17 +162,11 @@ class ComputeService:
     def __init__(self, repo: ComputeRepo):
         self.repo = repo
 
-    async def income_balance(self) -> int:
-        return await self.repo.get_total_amount_by_type("income")
+    async def get_financial_summary(self) -> dict:
+        income = await self.repo.get_total_amount_by_type("income")
+        expense = await self.repo.get_total_amount_by_type("expense")
 
-    async def expense_balance(self) -> int:
-        return await self.repo.get_total_amount_by_type("expense")
-
-    async def total_balance(self) -> int:
-        income = await self.repo.get_total_amount_by_type("income") or 0
-        expense = await self.repo.get_total_amount_by_type("expense") or 0
-        total = income - expense
-        return total
+        return {"income": income, "expense": expense, "total": income - expense}
 
     async def category_balance(self, category_id: int) -> dict:
         row = await self.repo.get_category_balance(category_id)
@@ -165,7 +178,7 @@ class ComputeService:
 
         result = {
             "name": row["category_name"],
-            "budget": row["budget_goal"],
+            "budget_goal": row["budget_goal"],
             "spent": row["spent"],
             "remaining": row["budget_goal"] - row["spent"],
         }
@@ -179,7 +192,7 @@ class ComputeService:
             result.append(
                 {
                     "name": row["category_name"],
-                    "budget": row["budget_goal"],
+                    "budget_goal": row["budget_goal"],
                     "spent": row["spent"],
                     "remaining": row["budget_goal"] - row["spent"],
                 }
