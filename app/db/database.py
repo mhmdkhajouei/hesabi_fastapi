@@ -1,6 +1,7 @@
 from datetime import datetime
 
 from sqlalchemy import (
+    Boolean,
     CheckConstraint,
     DateTime,
     Enum,
@@ -77,7 +78,7 @@ class Transaction(Base):
     date: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
-    note: Mapped[str | None] = mapped_column(String(225), nullable=True)
+    note: Mapped[str | None] = mapped_column(String(255), nullable=True)
     category_id: Mapped[int | None] = mapped_column(
         ForeignKey("categories.id", ondelete="SET NULL"), nullable=True
     )
@@ -89,7 +90,39 @@ class Transaction(Base):
     )
 
 
+class Household(Base):
+    __tablename__ = "household"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[int] = mapped_column(String(50), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
+class User(Base):
+    __tablename__ = "users"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str | None] = mapped_column(String(150), nullable=True)
+    email: Mapped[str] = mapped_column(String(255), index=True, unique=True)
+    password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
+    is_active: Mapped[bool] = mapped_column(
+        Boolean, default=True, server_default="true", nullable=False
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    __table_args__ = (
+        CheckConstraint(
+            "length(email) >= 5 AND email LIKE '%@%.%'", name="check_user_email_format"
+        ),
+        CheckConstraint(
+            "length(password_hash) > 20", name="check_users_password_hash_length"
+        ),
+    )
+
+
 engine = create_async_engine(settings.database_url, echo=True)
 async_db_session = async_sessionmaker(engine, expire_on_commit=False)
-
-
