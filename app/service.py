@@ -239,7 +239,8 @@ class UserService:
             name=user_in.name,
         )
 
-        return await self.repo.create_user(internal_user)
+        created_user = await self.repo.create_user(internal_user)
+        return UserResponse.model_validate(created_user)
 
     async def authenticate_user(self, credentials: UserLogin) -> Token:
 

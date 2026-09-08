@@ -6,7 +6,7 @@ from sqlalchemy.orm import (
 )
 
 from app.db.database import Budget, Category, Transaction, User
-from app.schemas import UserCreateInternal, UserResponse
+from app.schemas import UserCreateInternal
 
 
 class BaseRepo:
@@ -184,7 +184,7 @@ class UserRepo(BaseRepo):
         result = await self.session.execute(stmt)
         return result.scalar_one_or_none()
 
-    async def create_user(self, user_in: UserCreateInternal) -> UserResponse:
+    async def create_user(self, user_in: UserCreateInternal) -> User:
         new_user = User(
             email=user_in.email,
             password_hash=user_in.password_hash,
@@ -193,4 +193,4 @@ class UserRepo(BaseRepo):
         self.session.add(new_user)
         await self.session.commit()
         await self.session.refresh(new_user)
-        return UserResponse.model_validate(new_user)
+        return new_user
