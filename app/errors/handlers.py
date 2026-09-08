@@ -2,9 +2,9 @@ import logging
 from typing import Any
 
 from fastapi import FastAPI, Request
-from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
+from jwt.exceptions import ExpiredSignatureError, PyJWTError
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.errors.exceptions import AppError
@@ -15,6 +15,8 @@ logger = logging.getLogger(__name__)
 async def app_error_handler(request: Request, exc: AppError) -> JSONResponse:
     if not isinstance(exc, AppError):
         raise exc
+
+    headers = {"WWW-Authenticate": "Bearer"} if exc.status_code == 401 else None
     return JSONResponse(
         status_code=exc.status_code,
         content={
@@ -22,10 +24,13 @@ async def app_error_handler(request: Request, exc: AppError) -> JSONResponse:
             "error_code": exc.error_code,
             "message": exc.message,
         },
+        headers=headers,
     )
 
 
-async def validation_error_handler(request: Request, exc: RequestValidationError) -> JSONResponse:
+async def validation_error_handler(
+    request: Request, exc: RequestValidationError
+) -> JSONResponse:
     errors: list[dict[str, Any]] = []
     for error in exc.errors():
         field_path = "->".join(str(loc) for loc in error["loc"])
@@ -38,19 +43,18 @@ async def validation_error_handler(request: Request, exc: RequestValidationError
 
     return JSONResponse(
         status_code=422,
-        content=jsonable_encoder(
-            {
-                "success": False,
-                "error_code": "VALIDATION_ERROR",
-                "message": "Invalid request payload or query parameters",
-                "errors": errors,
-                "body": exc.body,
-            }
-        ),
+        content={
+            "success": False,
+            "error_code": "VALIDATION_ERROR",
+            "message": "Invalid request payload or query parameters",
+            "errors": errors,
+        },
     )
 
 
-async def http_error_handler(request: Request, exc: StarletteHTTPException) -> JSONResponse:
+async def http_error_handler(
+    request: Request, exc: StarletteHTTPException
+) -> JSONResponse:
     return JSONResponse(
         status_code=exc.status_code,
         content={
@@ -74,8 +78,32 @@ async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONR
     )
 
 
+async def jwt_exception_handler(request: Request, exc: PyJWTError) -> JSONResponse:
+    error_code = (
+        "TOKEN_EXPIRED" if isinstance(exc, ExpiredSignatureError) else "INVALID_TOKEN"
+    )
+    raw_message = exc.args[0] if exc.args else str(exc)
+
+    logger.warning(
+        f"JWT Auth Failed | Type: {exc.__class__.__name__} | "
+        f"Detail: {raw_message} | Path: {request.url.path} | "
+        f"Client IP: {request.client.host if request.client else 'unknown'}"
+    )
+
+    return JSONResponse(
+        status_code=401,
+        content={
+            "success": False,
+            "error_code": error_code,
+            "message": raw_message,
+        },
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+
+
 def register_exception_handlers(app: FastAPI) -> None:
     app.add_exception_handler(AppError, app_error_handler)
     app.add_exception_handler(RequestValidationError, validation_error_handler)
     app.add_exception_handler(StarletteHTTPException, http_error_handler)
     app.add_exception_handler(Exception, unhandled_exception_handler)
+    app.add_exception_handler(PyJWTError, jwt_exception_handler)

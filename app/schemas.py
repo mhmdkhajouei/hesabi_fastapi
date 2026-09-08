@@ -3,6 +3,8 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.validators import NormalizedEmail, StrongPassword
+
 
 class CategoryBase(BaseModel):
     model_config = ConfigDict(
@@ -142,3 +144,60 @@ class CategoryBalanceResponse(BaseModel):
     budget_goal: int = Field(gt=0, examples=[5000000])
     spent: int = Field(ge=0, examples=[100000])
     remaining: int = Field(examples=[-200000])
+
+
+class UserBase(BaseModel):
+    model_config = ConfigDict(str_strip_whitespace=True)
+    email: NormalizedEmail
+    name: str | None = Field(default=None, min_length=1, max_length=150, examples=[])
+
+
+class UserRegister(UserBase):
+    plain_password: StrongPassword = Field(min_length=8, max_length=128)
+
+
+class UserLogin(BaseModel):
+    model_config = ConfigDict(str_strip_whitespace=True)
+    email: NormalizedEmail
+    plain_password: str
+
+
+class UserResponse(UserBase):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    is_active: bool
+    created_at: datetime
+
+
+class UserCreateInternal(UserBase):
+    password_hash: str
+
+
+class Token(BaseModel):
+    access_token: str
+    refresh_token: str
+    token_type: str = "bearer"
+
+
+class TokenPayload(BaseModel):
+    sub: str = Field(min_length=1)
+    exp: int = Field()
+    iat: int = Field()
+    nbf: int | None = Field(default=None)
+    iss: str | None = Field(default=None)
+    aud: str | None = Field(default=None)
+    jti: str | None = Field(default=None)
+
+    type: Literal["access", "refresh"] = Field()
+
+
+class TokenRefreshRequest(BaseModel):
+    refresh_token: str = Field(
+        min_length=100,
+        pattern=r"^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$",
+    )
+
+
+class TokenRefreshResponse(BaseModel):
+    access_token: str
+    token_type: str = "bearer"

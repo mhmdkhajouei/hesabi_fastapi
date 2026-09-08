@@ -5,7 +5,8 @@ from sqlalchemy.orm import (
     selectinload,
 )
 
-from app.db.database import Budget, Category, Transaction
+from app.db.database import Budget, Category, Transaction, User
+from app.schemas import UserCreateInternal, UserResponse
 
 
 class BaseRepo:
@@ -170,3 +171,26 @@ class ComputeRepo(BaseRepo):
 
         result = await self.session.execute(stmt)
         return result.mappings().all()
+
+
+class UserRepo(BaseRepo):
+    async def get_user_by_id(self, id: int) -> User | None:
+        stmt = select(User).where(User.id == id)
+        result = await self.session.execute(stmt)
+        return result.scalar_one_or_none()
+
+    async def get_user_by_email(self, email: str) -> User | None:
+        stmt = select(User).where(User.email == email)
+        result = await self.session.execute(stmt)
+        return result.scalar_one_or_none()
+
+    async def create_user(self, user_in: UserCreateInternal) -> UserResponse:
+        new_user = User(
+            email=user_in.email,
+            password_hash=user_in.password_hash,
+            name=user_in.name,
+        )
+        self.session.add(new_user)
+        await self.session.commit()
+        await self.session.refresh(new_user)
+        return UserResponse.model_validate(new_user)

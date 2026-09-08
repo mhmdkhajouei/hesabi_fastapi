@@ -15,3 +15,8 @@ class NotFoundError(AppError):
 class BusinessRuleError(AppError):
     def __init__(self, message: str, error_code: str = "BUSINESS_RULE_ERROR"):
         super().__init__(message=message, status_code=422, error_code=error_code)
+
+
+class AuthenticationError(AppError):
+    def __init__(self, message: str, error_code: str = "AUTHENTICATION_FAILED"):
+        super().__init__(message=message, status_code=401, error_code=error_code)

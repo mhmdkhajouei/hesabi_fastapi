@@ -1,9 +1,26 @@
 from dataclasses import asdict
 from datetime import UTC, datetime
 
-from app.db.crud import CategoryRepo, ComputeRepo, TransactionRepo
+from app.db.crud import CategoryRepo, ComputeRepo, TransactionRepo, UserRepo
 from app.domain_models import CategoryDomain, TransactionDomain
-from app.errors.exceptions import NotFoundError
+from app.errors.exceptions import AuthenticationError, BusinessRuleError, NotFoundError
+from app.schemas import (
+    Token,
+    TokenRefreshRequest,
+    TokenRefreshResponse,
+    UserCreateInternal,
+    UserLogin,
+    UserRegister,
+    UserResponse,
+)
+from app.security import (
+    DUMMY_PASSWORD_HASH,
+    create_access_token,
+    create_refresh_token,
+    decode_token,
+    hash_password,
+    verify_password,
+)
 
 
 class CategoryService:
@@ -33,7 +50,7 @@ class CategoryService:
             )
 
         updated_name = data.get("name", category.name)
-        updated_budget = data.get("budget_goal", category.budget.goal)
+        updated_budget = data.get("budget_goal", category.budget_goal)
 
         cd = CategoryDomain(name=updated_name, budget_goal=updated_budget)
 
@@ -199,3 +216,94 @@ class ComputeService:
             )
 
         return result
+
+
+class UserService:
+    def __init__(self, repo: UserRepo):
+        self.repo = repo
+
+    async def user_register(self, user_in: UserRegister) -> UserResponse:
+        existing_user = await self.repo.get_user_by_email(user_in.email)
+
+        if existing_user:
+            raise BusinessRuleError(
+                message="A user with this email already exists",
+                error_code="EMAIL_ALREADY_EXISTS",
+            )
+
+        password_hashed = hash_password(user_in.plain_password)
+
+        internal_user = UserCreateInternal(
+            email=user_in.email,
+            password_hash=password_hashed,
+            name=user_in.name,
+        )
+
+        return await self.repo.create_user(internal_user)
+
+    async def authenticate_user(self, credentials: UserLogin) -> Token:
+
+        user = await self.repo.get_user_by_email(credentials.email)
+        user_hash = user.password_hash if user else DUMMY_PASSWORD_HASH
+        password_valid = verify_password(credentials.plain_password, user_hash)
+
+        if not user or not password_valid:
+            raise AuthenticationError(
+                message="Invalid email or password",
+                error_code="INVALID_CREDENTIALS",
+            )
+
+        if not user.is_active:
+            raise AuthenticationError(
+                message="User account is deactivated",
+                error_code="USER_DEACTIVATED",
+            )
+
+        access_token = create_access_token(subject=str(user.id))
+        refresh_token = create_refresh_token(subject=str(user.id))
+
+        return Token(
+            access_token=access_token,
+            refresh_token=refresh_token,
+            token_type="bearer",
+        )
+
+    async def request_refresh_token(
+        self, refresh_in: TokenRefreshRequest
+    ) -> TokenRefreshResponse:
+
+        payload = decode_token(refresh_in.refresh_token)
+        token_type = payload.type
+
+        if token_type != "refresh":
+            raise AuthenticationError(
+                message="Invalid token type for refresh",
+                error_code="INVALID_TOKEN_TYPE",
+            )
+
+        if not payload.sub.isdigit():
+            raise AuthenticationError(
+                message="Invalid token subject",
+                error_code="INVALID_TOKEN_SUBJECT",
+            )
+
+        user_id = int(payload.sub)
+        user = await self.repo.get_user_by_id(user_id)
+        if not user:
+            raise AuthenticationError(
+                message="User not found",
+                error_code="USER_NOT_FOUND",
+            )
+
+        if not user.is_active:
+            raise AuthenticationError(
+                message="User account is deactivated",
+                error_code="USER_DEACTIVATED",
+            )
+
+        new_access_token = create_access_token(subject=str(user.id))
+
+        return TokenRefreshResponse(
+            access_token=new_access_token,
+            token_type="bearer",
+        )
