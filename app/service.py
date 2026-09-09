@@ -231,7 +231,7 @@ class UserService:
                 error_code="EMAIL_ALREADY_EXISTS",
             )
 
-        password_hashed = hash_password(user_in.plain_password)
+        password_hashed = hash_password(user_in.password)
 
         internal_user = UserCreateInternal(
             email=user_in.email,
@@ -246,7 +246,7 @@ class UserService:
 
         user = await self.repo.get_user_by_email(credentials.email)
         user_hash = user.password_hash if user else DUMMY_PASSWORD_HASH
-        password_valid = verify_password(credentials.plain_password, user_hash)
+        password_valid = verify_password(credentials.password, user_hash)
 
         if not user or not password_valid:
             raise AuthenticationError(

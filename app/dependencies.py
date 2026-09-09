@@ -91,7 +91,7 @@ def get_user_repo(session: Annotated[AsyncSession, Depends(get_session)]) -> Use
     return UserRepo(session)
 
 
-def get_user_service(repo: Annotated[UserRepo, Depends[get_user_repo]]) -> UserService:
+def get_user_service(repo: Annotated[UserRepo, Depends(get_user_repo)]) -> UserService:
     return UserService(repo)
 
 

@@ -20,8 +20,8 @@ class Settings(BaseSettings):
     db_password: str
     db_name: str
 
-    jwt_private_key_path: Path = Path("certs/jwt_private.pem")
-    jwt_public_key_path: Path = Path("certs/jwt_public.pem")
+    jwt_private_key_path: Path = Path("certs/private_key.pem")
+    jwt_public_key_path: Path = Path("certs/public_key.pem")
     jwt_algorithm: str = "RS256"
     access_token_expire_minutes: int = 15
     refresh_token_expire_days: int = 7

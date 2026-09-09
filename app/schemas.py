@@ -153,13 +153,13 @@ class UserBase(BaseModel):
 
 
 class UserRegister(UserBase):
-    plain_password: StrongPassword = Field(min_length=8, max_length=128)
+    password: StrongPassword = Field(min_length=8, max_length=128)
 
 
 class UserLogin(BaseModel):
     model_config = ConfigDict(str_strip_whitespace=True)
     email: NormalizedEmail
-    plain_password: str
+    password: str
 
 
 class UserResponse(UserBase):
