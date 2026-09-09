@@ -20,6 +20,14 @@ tags_metadata = [
         "name": "Compute",
         "description": "Calculate financial rollups, overall summaries, and category balance,",
     },
+    {
+        "name": "Auth",
+        "description": "User registration, authentication, and JWT token management.",
+    },
+    {
+        "name": "Users",
+        "description": "Operation on authenticated user profiles,",
+    },
 ]
 
 

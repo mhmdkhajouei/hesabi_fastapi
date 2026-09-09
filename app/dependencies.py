@@ -10,7 +10,7 @@ from app.db.crud import CategoryRepo, ComputeRepo, TransactionRepo, UserRepo
 from app.db.database import User, async_db_session
 from app.errors.exceptions import AuthenticationError
 from app.security import decode_token
-from app.service import CategoryService, ComputeService, TransactionService
+from app.service import CategoryService, ComputeService, TransactionService, UserService
 
 
 async def get_session():
@@ -91,6 +91,10 @@ def get_user_repo(session: Annotated[AsyncSession, Depends(get_session)]) -> Use
     return UserRepo(session)
 
 
+def get_user_service(repo: Annotated[UserRepo, Depends[get_user_repo]]) -> UserService:
+    return UserService(repo)
+
+
 async def get_current_user(
     repo: Annotated[UserRepo, Depends(get_user_repo)],
     token: Annotated[str, Depends(oauth2_scheme)],
@@ -131,3 +135,6 @@ async def get_current_active_user(
         )
 
     return current_user
+
+
+CurrentUser = Annotated[User, Depends(get_current_active_user)]
