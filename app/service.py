@@ -1,13 +1,18 @@
-from dataclasses import asdict
 from datetime import UTC, datetime
 
 from app.db.crud import CategoryRepo, ComputeRepo, TransactionRepo, UserRepo
 from app.domain_models import CategoryDomain, TransactionDomain
 from app.errors.exceptions import AuthenticationError, BusinessRuleError, NotFoundError
 from app.schemas import (
+    CategoryCreate,
+    CategoryResponse,
+    CategoryUpdate,
     Token,
     TokenRefreshRequest,
     TokenRefreshResponse,
+    TransactionCreate,
+    TransactionResponse,
+    TransactionUpdate,
     UserCreateInternal,
     UserLogin,
     UserRegister,
@@ -28,18 +33,18 @@ class CategoryService:
 
         self.repo = repo
 
-    async def add_category(self, data: dict):
-
+    async def add_category(self, category: CategoryCreate) -> CategoryResponse:
         cd = CategoryDomain(
-            name=data["name"],
-            budget_goal=data["budget_goal"],
+            name=category.name,
+            budget_goal=category.budget_goal,
         )
 
-        insert_data = asdict(cd)
+        cg = await self.repo.insert_category(cd)
+        return CategoryResponse.model_validate(cg)
 
-        return await self.repo.insert_category(insert_data)
-
-    async def edit_category(self, category_id: int, data: dict):
+    async def edit_category(
+        self, category_id: int, data: CategoryUpdate
+    ) -> CategoryResponse:
 
         category = await self.repo.get_category(category_id)
 
@@ -49,16 +54,15 @@ class CategoryService:
                 error_code="CATEGORY_NOT_FOUND",
             )
 
-        updated_name = data.get("name", category.name)
-        updated_budget = data.get("budget_goal", category.budget_goal)
+        cd = CategoryDomain(
+            name=data.name or category.name,
+            budget_goal=data.budget_goal or category.budget_goal,
+        )
 
-        cd = CategoryDomain(name=updated_name, budget_goal=updated_budget)
+        cg = await self.repo.update_category(category, cd)
+        return CategoryResponse.model_validate(cg)
 
-        update_data = asdict(cd)
-
-        return await self.repo.update_category(category, update_data)
-
-    async def delete_category(self, category_id: int):
+    async def delete_category(self, category_id: int) -> bool:
 
         deleted = await self.repo.delete_category(category_id)
 
@@ -70,16 +74,16 @@ class CategoryService:
 
         return True
 
-    async def get_category(self, category_id: int):
+    async def get_category(self, category_id: int) -> CategoryResponse:
         category = await self.repo.get_category(category_id)
         if not category:
             raise NotFoundError(
                 message=f"Category with ID {category_id} not found",
                 error_code="CATEGORY_NOT_FOUND",
             )
-        return category
+        return CategoryResponse.model_validate(category)
 
-    async def get_all_categories(self):
+    async def get_all_categories(self) -> list[CategoryResponse]:
         return await self.repo.get_all_categories()
 
 
@@ -89,16 +93,16 @@ class TransactionService:
         self.repo = repo
         self.category_repo = category_repo
 
-    async def add_transaction(self, data: dict):
+    async def add_transaction(self, data: TransactionCreate) -> TransactionResponse:
 
-        tx_date = data.get("date") or datetime.now(UTC)
+        tx_date = data.date or datetime.now(UTC)
 
         tx = TransactionDomain(
-            amount=data["amount"],
-            type=data["type"],
-            category_id=data.get("category_id"),
+            amount=data.amount,
+            type=data.type,
+            category_id=data.category_id,
             date=tx_date,
-            note=data.get("note"),
+            note=data.note,
         )
 
         if tx.category_id is not None:
@@ -108,12 +112,12 @@ class TransactionService:
                     message=f"Category with ID {tx.category_id} not found",
                     error_code="CATEGORY_NOT_FOUND",
                 )
+        tn = await self.repo.insert_transaction(tx)
+        return TransactionResponse.model_validate(tn)
 
-        insert_data = asdict(tx)
-
-        return await self.repo.insert_transaction(insert_data)
-
-    async def edit_transaction(self, transaction_id: int, data: dict):
+    async def edit_transaction(
+        self, transaction_id: int, data: TransactionUpdate
+    ) -> TransactionResponse:
 
         transaction = await self.repo.get_transaction(transaction_id)
 
@@ -123,11 +127,13 @@ class TransactionService:
                 error_code="TRANSACTION_NOT_FOUND",
             )
 
-        updated_amount = data.get("amount", transaction.amount)
-        updated_type = data.get("type", transaction.type)
-        updated_date = data.get("date", transaction.date)
-        updated_category_id = data.get("category_id", transaction.category_id)
-        updated_note = data.get("note", transaction.note)
+        updated_amount = data.amount or transaction.amount
+        updated_type = data.type or transaction.type
+        updated_date = data.date or transaction.date
+        if updated_date.tzinfo is None:
+            updated_date = updated_date.replace(tzinfo=UTC)
+        updated_category_id = data.category_id or transaction.category_id
+        updated_note = data.note or transaction.note
 
         if updated_category_id is not None:
             exist = await self.category_repo.check_category(updated_category_id)
@@ -145,11 +151,10 @@ class TransactionService:
             note=updated_note,
         )
 
-        updated_data = asdict(tx)
+        tn = await self.repo.update_transaction(transaction, tx)
+        return TransactionResponse.model_validate(tn)
 
-        return await self.repo.update_transaction(transaction, updated_data)
-
-    async def delete_transaction(self, transaction_id: int):
+    async def delete_transaction(self, transaction_id: int) -> bool:
 
         deleted = await self.repo.delete_transaction(transaction_id)
 
@@ -161,7 +166,7 @@ class TransactionService:
 
         return True
 
-    async def get_transaction(self, transaction_id: int):
+    async def get_transaction(self, transaction_id: int) -> TransactionResponse:
         transaction = await self.repo.get_transaction(transaction_id)
 
         if not transaction:
@@ -169,9 +174,9 @@ class TransactionService:
                 message=f"Transaction with id {transaction_id} not found",
                 error_code="TRANSACTION_NOT_FOUND",
             )
-        return transaction
+        return TransactionResponse.model_validate(transaction)
 
-    async def get_all_transactions(self):
+    async def get_all_transactions(self) -> list[TransactionResponse]:
         return await self.repo.get_all_transactions()
 
 

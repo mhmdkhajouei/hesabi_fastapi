@@ -1,4 +1,4 @@
-from sqlalchemy import and_, delete, exists, func, select
+from sqlalchemy import CursorResult, and_, delete, exists, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import (
     joinedload,
@@ -6,7 +6,10 @@ from sqlalchemy.orm import (
 )
 
 from app.db.database import Budget, Category, Transaction, User
-from app.schemas import UserCreateInternal
+from app.domain_models import CategoryDomain, TransactionDomain
+from app.schemas import (
+    UserCreateInternal,
+)
 
 
 class BaseRepo:
@@ -15,21 +18,21 @@ class BaseRepo:
 
 
 class CategoryRepo(BaseRepo):
-    async def insert_category(self, data: dict) -> Category:
-        data_copy = data.copy()
-        budget_goal = data_copy.pop("budget_goal", None)
-        new_category = Category(**data_copy)
-        new_category.budget = Budget(goal=budget_goal)
+    async def insert_category(self, category: CategoryDomain) -> Category:
+        new_category = Category(
+            name=category.name,
+        )
+        new_category.budget = Budget(goal=category.budget_goal)
         self.session.add(new_category)
         await self.session.commit()
         await self.session.refresh(new_category, ["budget"])
         return new_category
 
-    async def update_category(self, category: Category, data: dict) -> Category | None:
-        if "name" in data:
-            category.name = data["name"]
-        if "budget_goal" in data:
-            category.budget.goal = data["budget_goal"]
+    async def update_category(
+        self, category: Category, data: CategoryDomain
+    ) -> Category:
+        category.name = data.name
+        category.budget.goal = data.budget_goal
 
         await self.session.commit()
         await self.session.refresh(category, ["budget"])
@@ -39,6 +42,7 @@ class CategoryRepo(BaseRepo):
         stmt = delete(Category).where(Category.id == id)
         result = await self.session.execute(stmt)
         await self.session.commit()
+        assert isinstance(result, CursorResult)
         return result.rowcount > 0
 
     async def get_category(self, id: int) -> Category | None:
@@ -70,20 +74,28 @@ class BudgetRepo(BaseRepo):
 
 
 class TransactionRepo(BaseRepo):
-    async def insert_transaction(self, data: dict) -> Transaction:
-        new_transaction = Transaction(**data)
+    async def insert_transaction(self, data: TransactionDomain) -> Transaction:
+        new_transaction = Transaction(
+            amount=data.amount,
+            type=data.type,
+            date=data.date,
+            note=data.note,
+            category_id=data.category_id,
+        )
         self.session.add(new_transaction)
         await self.session.commit()
         await self.session.refresh(new_transaction)
         return new_transaction
 
     async def update_transaction(
-        self, transaction: Transaction, data: dict
+        self, transaction: Transaction, data: TransactionDomain
     ) -> Transaction | None:
-
-        for field in ("amount", "type", "note", "category_id", "date"):
-            if field in data:
-                setattr(transaction, field, data[field])
+        transaction.amount = data.amount
+        transaction.type = data.type
+        if data.date is not None:
+            transaction.date = data.date
+        transaction.note = data.note
+        transaction.category_id = data.category_id
 
         await self.session.commit()
         await self.session.refresh(transaction)

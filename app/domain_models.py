@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from typing import Literal
 
 from app.errors.exceptions import BusinessRuleError
 
@@ -38,7 +39,7 @@ class CategoryDomain:
 @dataclass
 class TransactionDomain:
     amount: int
-    type: str
+    type: Literal["income", "expense"]
     date: datetime | None = None
     note: str | None = None
     category_id: int | None = None
@@ -52,11 +53,6 @@ class TransactionDomain:
             raise BusinessRuleError(
                 message="Transaction amount must be strictly greater than zero",
                 error_code="INVALID_AMOUNT",
-            )
-        if self.type not in ["income", "expense"]:
-            raise BusinessRuleError(
-                message="Transaction type must be either income or expense",
-                error_code="INVALID_TRANSACTION_TYPE",
             )
         if self.type == "income" and self.category_id is not None:
             raise BusinessRuleError(

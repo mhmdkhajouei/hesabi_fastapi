@@ -1,4 +1,5 @@
 from datetime import datetime
+from typing import Literal
 
 from sqlalchemy import (
     Boolean,
@@ -49,8 +50,8 @@ class Category(Base):
     transactions: Mapped[list["Transaction"]] = relationship(back_populates="category")
 
     @property
-    def budget_goal(self) -> int | None:
-        return self.budget.goal if self.budget else None
+    def budget_goal(self) -> int:
+        return self.budget.goal
 
 
 class Budget(Base):
@@ -73,7 +74,9 @@ class Transaction(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     amount: Mapped[int] = mapped_column(nullable=False)
-    type: Mapped[str] = mapped_column(TransactionType, nullable=False)
+    type: Mapped[Literal["income", "expense"]] = mapped_column(
+        TransactionType, nullable=False
+    )
     currency: Mapped[str] = mapped_column(CurrencyType, default="TOMAN", nullable=False)
     date: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
