@@ -5,7 +5,7 @@ from httpx import ASGITransport, AsyncClient
 from pydantic import BaseModel, Field
 
 from app.errors.exceptions import NotFoundError
-from app.errors.handlers import app  # همان اپ که هندلرها به آن متصل شده‌اند
+from app.main import app  # همان اپ که هندلرها به آن متصل شده‌اند
 
 
 # ۱. تعریف دو مسیر آزمایشی برای شبیه‌سازی خطاها

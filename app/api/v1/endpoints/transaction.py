@@ -44,7 +44,7 @@ async def create_transaction(
     data: TransactionCreate,
     service: Annotated[TransactionService, Depends(get_transaction_service)],
 ) -> TransactionResponse:
-    return await service.add_transaction(data.model_dump())
+    return await service.add_transaction(data)
 
 
 @router.patch(
@@ -58,8 +58,7 @@ async def edit_transaction(
     data: TransactionUpdate,
     service: Annotated[TransactionService, Depends(get_transaction_service)],
 ) -> TransactionResponse:
-    update_data = data.model_dump(exclude_unset=True)
-    return await service.edit_transaction(transaction_id, update_data)
+    return await service.edit_transaction(transaction_id, data)
 
 
 @router.delete(
@@ -72,4 +71,4 @@ async def delete_transaction(
     transaction_id: Annotated[int, Path(gt=0)],
     service: Annotated[TransactionService, Depends(get_transaction_service)],
 ) -> None:
-    return await service.delete_transaction(transaction_id)
+    await service.delete_transaction(transaction_id)

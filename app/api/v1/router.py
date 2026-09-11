@@ -1,8 +1,10 @@
 from fastapi import APIRouter
 
+from app.api.v1.endpoints.auth import router as auth_route
 from app.api.v1.endpoints.category import router as category_route
 from app.api.v1.endpoints.compute import router as compute_route
 from app.api.v1.endpoints.transaction import router as transaction_route
+from app.api.v1.endpoints.users import router as users_route
 
 v1_router = APIRouter(prefix="/api/v1")
 
@@ -22,4 +24,16 @@ v1_router.include_router(
     compute_route,
     prefix="/compute",
     tags=["Compute"],
+)
+
+v1_router.include_router(
+    auth_route,
+    prefix="/auth",
+    tags=["Auth"],
+)
+
+v1_router.include_router(
+    users_route,
+    prefix="/users",
+    tags=["Users"],
 )

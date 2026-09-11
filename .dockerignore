@@ -21,6 +21,7 @@ __pycache__/
 db_password.txt
 *.pem
 *.key
+certs/
 
 # Documentation & planning docs (not needed in runtime)
 docs/

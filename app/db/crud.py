@@ -5,7 +5,11 @@ from sqlalchemy.orm import (
     selectinload,
 )
 
-from app.db.database import Budget, Category, Transaction
+from app.db.database import Budget, Category, Transaction, User
+from app.domain_models import CategoryDomain, TransactionDomain
+from app.schemas import (
+    UserCreateInternal,
+)
 
 
 class BaseRepo:
@@ -14,21 +18,21 @@ class BaseRepo:
 
 
 class CategoryRepo(BaseRepo):
-    async def insert_category(self, data: dict) -> Category:
-        data_copy = data.copy()
-        budget_goal = data_copy.pop("budget_goal", None)
-        new_category = Category(**data_copy)
-        new_category.budget = Budget(goal=budget_goal)
+    async def insert_category(self, category: CategoryDomain) -> Category:
+        new_category = Category(
+            name=category.name,
+        )
+        new_category.budget = Budget(goal=category.budget_goal)
         self.session.add(new_category)
         await self.session.commit()
         await self.session.refresh(new_category, ["budget"])
         return new_category
 
-    async def update_category(self, category: Category, data: dict) -> Category | None:
-        if "name" in data:
-            category.name = data["name"]
-        if "budget_goal" in data:
-            category.budget.goal = data["budget_goal"]
+    async def update_category(
+        self, category: Category, data: CategoryDomain
+    ) -> Category:
+        category.name = data.name
+        category.budget.goal = data.budget_goal
 
         await self.session.commit()
         await self.session.refresh(category, ["budget"])
@@ -38,7 +42,7 @@ class CategoryRepo(BaseRepo):
         stmt = delete(Category).where(Category.id == id)
         result = await self.session.execute(stmt)
         await self.session.commit()
-        return result.rowcount > 0
+        return result is not None
 
     async def get_category(self, id: int) -> Category | None:
         stmt = (
@@ -69,20 +73,28 @@ class BudgetRepo(BaseRepo):
 
 
 class TransactionRepo(BaseRepo):
-    async def insert_transaction(self, data: dict) -> Transaction:
-        new_transaction = Transaction(**data)
+    async def insert_transaction(self, data: TransactionDomain) -> Transaction:
+        new_transaction = Transaction(
+            amount=data.amount,
+            type=data.type,
+            date=data.date,
+            note=data.note,
+            category_id=data.category_id,
+        )
         self.session.add(new_transaction)
         await self.session.commit()
         await self.session.refresh(new_transaction)
         return new_transaction
 
     async def update_transaction(
-        self, transaction: Transaction, data: dict
+        self, transaction: Transaction, data: TransactionDomain
     ) -> Transaction | None:
-
-        for field in ("amount", "type", "note", "category_id", "date"):
-            if field in data:
-                setattr(transaction, field, data[field])
+        transaction.amount = data.amount
+        transaction.type = data.type
+        if data.date is not None:
+            transaction.date = data.date
+        transaction.note = data.note
+        transaction.category_id = data.category_id
 
         await self.session.commit()
         await self.session.refresh(transaction)
@@ -92,7 +104,7 @@ class TransactionRepo(BaseRepo):
         stmt = delete(Transaction).where(Transaction.id == id)
         result = await self.session.execute(stmt)
         await self.session.commit()
-        return result.rowcount > 0
+        return result is not None
 
     async def get_transaction(self, id: int) -> Transaction | None:
         stmt = (
@@ -170,3 +182,26 @@ class ComputeRepo(BaseRepo):
 
         result = await self.session.execute(stmt)
         return result.mappings().all()
+
+
+class UserRepo(BaseRepo):
+    async def get_user_by_id(self, id: int) -> User | None:
+        stmt = select(User).where(User.id == id)
+        result = await self.session.execute(stmt)
+        return result.scalar_one_or_none()
+
+    async def get_user_by_email(self, email: str) -> User | None:
+        stmt = select(User).where(User.email == email)
+        result = await self.session.execute(stmt)
+        return result.scalar_one_or_none()
+
+    async def create_user(self, user_in: UserCreateInternal) -> User:
+        new_user = User(
+            email=user_in.email,
+            password_hash=user_in.password_hash,
+            name=user_in.name,
+        )
+        self.session.add(new_user)
+        await self.session.commit()
+        await self.session.refresh(new_user)
+        return new_user

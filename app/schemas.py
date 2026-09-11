@@ -3,6 +3,8 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.validators import NormalizedEmail, StrongPassword
+
 
 class CategoryBase(BaseModel):
     model_config = ConfigDict(
@@ -85,6 +87,9 @@ class TransactionUpdate(BaseModel):
     type: Literal["income", "expense"] | None = Field(
         default=None, examples=["expense"]
     )
+    date: datetime | None = Field(default=None, examples=["2026-08-30T10:30:00Z"])
+    note: str | None = Field(default=None, max_length=150, examples=["Updated note"])
+    category_id: int | None = Field(default=None, gt=0, examples=[5])
 
 
 class TransactionResponse(TransactionBase):
@@ -142,3 +147,145 @@ class CategoryBalanceResponse(BaseModel):
     budget_goal: int = Field(gt=0, examples=[5000000])
     spent: int = Field(ge=0, examples=[100000])
     remaining: int = Field(examples=[-200000])
+
+
+class UserBase(BaseModel):
+    model_config = ConfigDict(
+        str_strip_whitespace=True,
+        json_schema_extra={
+            "example": {
+                "email": "user@example.com",
+                "name": "Mohammad Javad",
+            }
+        },
+    )
+    email: NormalizedEmail
+    name: str | None = Field(default=None, min_length=1, max_length=150, examples=[])
+
+
+class UserRegister(UserBase):
+    model_config = ConfigDict(
+        str_strip_whitespace=True,
+        json_schema_extra={
+            "example": {
+                "email": "user@example.com",
+                "name": "Mohammad Javad",
+                "password": "StrongPassword123!",
+            }
+        },
+    )
+    password: StrongPassword = Field(min_length=8, max_length=128)
+
+
+class UserLogin(BaseModel):
+    model_config = ConfigDict(
+        str_strip_whitespace=True,
+        json_schema_extra={
+            "example": {
+                "email": "user@example.com",
+                "password": "StrongPassword123!",
+            }
+        },
+    )
+    email: NormalizedEmail
+    password: str
+
+
+class UserResponse(UserBase):
+    model_config = ConfigDict(
+        from_attributes=True,
+        json_schema_extra={
+            "example": {
+                "id": 1,
+                "email": "user@example.com",
+                "name": "Mohammad Javad",
+                "is_active": True,
+                "created_at": "2026-09-11T16:00:00Z",
+            }
+        },
+    )
+    id: int
+    is_active: bool
+    created_at: datetime
+
+
+class UserCreateInternal(UserBase):
+    model_config = ConfigDict(
+        str_strip_whitespace=True,
+        json_schema_extra={
+            "example": {
+                "email": "user@example.com",
+                "name": "Mohammad Javad",
+                "password_hash": "$argon2id$v=19$m=65536,t=3,p=4$examplehash...",
+            }
+        },
+    )
+    password_hash: str
+
+
+class Token(BaseModel):
+    model_config = ConfigDict(
+        json_schema_extra={
+            "example": {
+                "access_token": "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9...",
+                "refresh_token": "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9...",
+                "token_type": "bearer",
+            }
+        }
+    )
+    access_token: str
+    refresh_token: str
+    token_type: str = "bearer"
+
+
+class TokenPayload(BaseModel):
+    model_config = ConfigDict(
+        json_schema_extra={
+            "example": {
+                "sub": "1",
+                "exp": 1789146000,
+                "iat": 1789145100,
+                "nbf": 1789145100,
+                "iss": "hesabi-auth",
+                "aud": "hesabi-api",
+                "jti": "b5a7c2e1-4f89-4d2a-9e12-8c7a1f5d6e3b",
+                "type": "access",
+            }
+        }
+    )
+    sub: str = Field(min_length=1)
+    exp: int = Field()
+    iat: int = Field()
+    nbf: int | None = Field(default=None)
+    iss: str | None = Field(default=None)
+    aud: str | None = Field(default=None)
+    jti: str | None = Field(default=None)
+
+    type: Literal["access", "refresh"] = Field()
+
+
+class TokenRefreshRequest(BaseModel):
+    model_config = ConfigDict(
+        json_schema_extra={
+            "example": {
+                "refresh_token": "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxIiwidHlwZSI6InJlZnJlc2giLCJleHAiOjE3ODk3NTAwMDB9.signature_part_here..."
+            }
+        }
+    )
+    refresh_token: str = Field(
+        min_length=100,
+        pattern=r"^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$",
+    )
+
+
+class TokenRefreshResponse(BaseModel):
+    model_config = ConfigDict(
+        json_schema_extra={
+            "example": {
+                "access_token": "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9...",
+                "token_type": "bearer",
+            }
+        }
+    )
+    access_token: str
+    token_type: str = "bearer"

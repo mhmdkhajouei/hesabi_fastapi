@@ -1,10 +1,13 @@
+from functools import cached_property
+from pathlib import Path
+
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
     cors_origins: list[str] = [
         "http://localhost:3000",
-        "http://127.0.0.:3000",
+        "http://127.0.0.1:3000",
         "http://localhost:8080",
     ]
 
@@ -17,11 +20,25 @@ class Settings(BaseSettings):
     db_password: str
     db_name: str
 
+    jwt_private_key_path: Path = Path("certs/private_key.pem")
+    jwt_public_key_path: Path = Path("certs/public_key.pem")
+    jwt_algorithm: str = "RS256"
+    access_token_expire_minutes: int = 15
+    refresh_token_expire_days: int = 7
+
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
-    @property
+    @cached_property
     def database_url(self) -> str:
         return f"postgresql+asyncpg://{self.db_user}:{self.db_password}@{self.db_host}:{self.db_port}/{self.db_name}"
+
+    @cached_property
+    def private_key(self) -> str:
+        return self.jwt_private_key_path.read_text().strip()
+
+    @cached_property
+    def public_key(self) -> str:
+        return self.jwt_public_key_path.read_text().strip()
 
 
 settings = Settings()

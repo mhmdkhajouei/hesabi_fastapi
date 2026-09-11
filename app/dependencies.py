@@ -2,12 +2,15 @@ from datetime import UTC, datetime
 from email.utils import format_datetime
 
 from fastapi import Depends, Response
+from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.util.typing import Annotated
 
-from app.db.crud import CategoryRepo, ComputeRepo, TransactionRepo
-from app.db.database import async_db_session
-from app.service import CategoryService, ComputeService, TransactionService
+from app.db.crud import CategoryRepo, ComputeRepo, TransactionRepo, UserRepo
+from app.db.database import User, async_db_session
+from app.errors.exceptions import AuthenticationError
+from app.security import decode_token
+from app.service import CategoryService, ComputeService, TransactionService, UserService
 
 
 async def get_session():
@@ -79,3 +82,59 @@ class DeprecateRoute:
             response.headers["Link"] = (
                 f'<{self.alternative_url}>; rel="successor-version"'
             )
+
+
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/login")
+
+
+def get_user_repo(session: Annotated[AsyncSession, Depends(get_session)]) -> UserRepo:
+    return UserRepo(session)
+
+
+def get_user_service(repo: Annotated[UserRepo, Depends(get_user_repo)]) -> UserService:
+    return UserService(repo)
+
+
+async def get_current_user(
+    repo: Annotated[UserRepo, Depends(get_user_repo)],
+    token: Annotated[str, Depends(oauth2_scheme)],
+) -> User:
+
+    payload = decode_token(token)
+
+    if payload.type != "access":
+        raise AuthenticationError(
+            message="Invalid token type for authentication",
+            error_code="INVALID_TOKEN_TYPE",
+        )
+
+    if not payload.sub.isdigit():
+        raise AuthenticationError(
+            message="Invalid token subject",
+            error_code="INVALID_TOKEN_SUBJECT",
+        )
+
+    user = await repo.get_user_by_id(int(payload.sub))
+
+    if not user:
+        raise AuthenticationError(
+            message="User not found",
+            error_code="USER_NOT_FOUND",
+        )
+
+    return user
+
+
+async def get_current_active_user(
+    current_user: Annotated[User, Depends(get_current_user)],
+) -> User:
+    if not current_user.is_active:
+        raise AuthenticationError(
+            message="User account is deactivated",
+            error_code="USER_DEACTIVATED",
+        )
+
+    return current_user
+
+
+CurrentUser = Annotated[User, Depends(get_current_active_user)]

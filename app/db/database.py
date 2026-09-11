@@ -1,6 +1,8 @@
 from datetime import datetime
+from typing import Literal
 
 from sqlalchemy import (
+    Boolean,
     CheckConstraint,
     DateTime,
     Enum,
@@ -48,8 +50,8 @@ class Category(Base):
     transactions: Mapped[list["Transaction"]] = relationship(back_populates="category")
 
     @property
-    def budget_goal(self) -> int | None:
-        return self.budget.goal if self.budget else None
+    def budget_goal(self) -> int:
+        return self.budget.goal
 
 
 class Budget(Base):
@@ -72,12 +74,14 @@ class Transaction(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     amount: Mapped[int] = mapped_column(nullable=False)
-    type: Mapped[str] = mapped_column(TransactionType, nullable=False)
+    type: Mapped[Literal["income", "expense"]] = mapped_column(
+        TransactionType, nullable=False
+    )
     currency: Mapped[str] = mapped_column(CurrencyType, default="TOMAN", nullable=False)
     date: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
-    note: Mapped[str | None] = mapped_column(String(225), nullable=True)
+    note: Mapped[str | None] = mapped_column(String(255), nullable=True)
     category_id: Mapped[int | None] = mapped_column(
         ForeignKey("categories.id", ondelete="SET NULL"), nullable=True
     )
@@ -89,7 +93,39 @@ class Transaction(Base):
     )
 
 
+class Household(Base):
+    __tablename__ = "household"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String(50), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
+class User(Base):
+    __tablename__ = "users"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str | None] = mapped_column(String(150), nullable=True)
+    email: Mapped[str] = mapped_column(String(255), index=True, unique=True)
+    password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
+    is_active: Mapped[bool] = mapped_column(
+        Boolean, default=True, server_default="true", nullable=False
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    __table_args__ = (
+        CheckConstraint(
+            "length(email) >= 5 AND email LIKE '%@%.%'", name="check_user_email_format"
+        ),
+        CheckConstraint(
+            "length(password_hash) > 20", name="check_users_password_hash_length"
+        ),
+    )
+
+
 engine = create_async_engine(settings.database_url, echo=True)
 async_db_session = async_sessionmaker(engine, expire_on_commit=False)
-
-
