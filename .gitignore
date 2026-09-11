@@ -10,6 +10,7 @@ dist/
 wheels/
 *.egg-info/
 .eggs/
+certs/
 
 # Virtual environments
 .venv/
@@ -64,3 +65,5 @@ logs/
 # Local Docker persistence, if you ever use bind mounts
 pgdata/
 postgres_data/
+/certs/private_key.pem
+/certs
