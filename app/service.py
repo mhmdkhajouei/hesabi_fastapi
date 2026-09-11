@@ -20,6 +20,7 @@ from app.schemas import (
 )
 from app.security import (
     DUMMY_PASSWORD_HASH,
+    TokenType,
     create_access_token,
     create_refresh_token,
     decode_token,
@@ -267,7 +268,7 @@ class UserService:
         return Token(
             access_token=access_token,
             refresh_token=refresh_token,
-            token_type="bearer",
+            token_type=TokenType.BEARER,
         )
 
     async def request_refresh_token(
@@ -277,7 +278,7 @@ class UserService:
         payload = decode_token(refresh_in.refresh_token)
         token_type = payload.type
 
-        if token_type != "refresh":
+        if token_type != TokenType.REFRESH:
             raise AuthenticationError(
                 message="Invalid token type for refresh",
                 error_code="INVALID_TOKEN_TYPE",
@@ -307,5 +308,5 @@ class UserService:
 
         return TokenRefreshResponse(
             access_token=new_access_token,
-            token_type="bearer",
+            token_type=TokenType.BEARER,
         )

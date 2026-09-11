@@ -1,4 +1,5 @@
 from datetime import UTC, datetime, timedelta
+from enum import StrEnum
 from typing import Literal
 from uuid import uuid4
 
@@ -9,6 +10,12 @@ from app.config import settings
 from app.schemas import TokenPayload
 
 PASSWORD_HASHER = PasswordHash.recommended()
+
+
+class TokenType(StrEnum):
+    ACCESS = "access"
+    REFRESH = "refresh"
+    BEARER = "bearer"
 
 
 def verify_password(
@@ -27,7 +34,7 @@ DUMMY_PASSWORD_HASH: str = hash_password("dummy_constant_password_value")
 
 def _create_token(
     subject: str,
-    token_type: Literal["access", "refresh"],
+    token_type: Literal[TokenType.ACCESS, TokenType.REFRESH],
     expire_delta: timedelta,
 ) -> str:
 
@@ -55,7 +62,7 @@ def _create_token(
 def create_access_token(subject: str) -> str:
     return _create_token(
         subject=subject,
-        token_type="access",
+        token_type=TokenType.ACCESS,
         expire_delta=timedelta(minutes=settings.access_token_expire_minutes),
     )
 
@@ -63,7 +70,7 @@ def create_access_token(subject: str) -> str:
 def create_refresh_token(subject: str) -> str:
     return _create_token(
         subject=subject,
-        token_type="refresh",
+        token_type=TokenType.REFRESH,
         expire_delta=timedelta(days=settings.refresh_token_expire_days),
     )
 
