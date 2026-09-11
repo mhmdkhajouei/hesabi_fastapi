@@ -102,8 +102,8 @@ async def jwt_exception_handler(request: Request, exc: PyJWTError) -> JSONRespon
 
 
 def register_exception_handlers(app: FastAPI) -> None:
-    app.add_exception_handler(AppError, app_error_handler)
-    app.add_exception_handler(RequestValidationError, validation_error_handler)
-    app.add_exception_handler(StarletteHTTPException, http_error_handler)
-    app.add_exception_handler(Exception, unhandled_exception_handler)
-    app.add_exception_handler(PyJWTError, jwt_exception_handler)
+    app.exception_handler(AppError)(app_error_handler)
+    app.exception_handler(RequestValidationError)(validation_error_handler)
+    app.exception_handler(StarletteHTTPException)(http_error_handler)
+    app.exception_handler(Exception)(unhandled_exception_handler)
+    app.exception_handler(PyJWTError)(jwt_exception_handler)

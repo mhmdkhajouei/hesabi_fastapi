@@ -62,7 +62,7 @@ class CategoryService:
         cg = await self.repo.update_category(category, cd)
         return CategoryResponse.model_validate(cg)
 
-    async def delete_category(self, category_id: int) -> bool:
+    async def delete_category(self, category_id: int) -> None:
 
         deleted = await self.repo.delete_category(category_id)
 
@@ -71,8 +71,6 @@ class CategoryService:
                 message=f"Category with ID {category_id} not found",
                 error_code="CATEGORY_NOT_FOUND",
             )
-
-        return True
 
     async def get_category(self, category_id: int) -> CategoryResponse:
         category = await self.repo.get_category(category_id)
@@ -154,7 +152,7 @@ class TransactionService:
         tn = await self.repo.update_transaction(transaction, tx)
         return TransactionResponse.model_validate(tn)
 
-    async def delete_transaction(self, transaction_id: int) -> bool:
+    async def delete_transaction(self, transaction_id: int) -> None:
 
         deleted = await self.repo.delete_transaction(transaction_id)
 
@@ -163,8 +161,6 @@ class TransactionService:
                 message=f"Transaction with id {transaction_id} not found",
                 error_code="TRANSACTION_NOT_FOUND",
             )
-
-        return True
 
     async def get_transaction(self, transaction_id: int) -> TransactionResponse:
         transaction = await self.repo.get_transaction(transaction_id)

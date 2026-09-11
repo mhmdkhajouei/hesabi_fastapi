@@ -44,7 +44,7 @@ async def create_category(
     data: CategoryCreate,
     service: Annotated[CategoryService, Depends(get_category_service)],
 ) -> CategoryResponse:
-    return await service.add_category(data.model_dump())
+    return await service.add_category(data)
 
 
 @router.patch(
@@ -58,8 +58,7 @@ async def edit_category(
     data: CategoryUpdate,
     service: Annotated[CategoryService, Depends(get_category_service)],
 ) -> CategoryResponse:
-    updated_data = data.model_dump(exclude_unset=True)
-    return await service.edit_category(category_id, updated_data)
+    return await service.edit_category(category_id, data)
 
 
 @router.delete(

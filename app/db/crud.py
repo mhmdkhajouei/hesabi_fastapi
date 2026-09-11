@@ -1,4 +1,4 @@
-from sqlalchemy import CursorResult, and_, delete, exists, func, select
+from sqlalchemy import and_, delete, exists, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import (
     joinedload,
@@ -42,8 +42,7 @@ class CategoryRepo(BaseRepo):
         stmt = delete(Category).where(Category.id == id)
         result = await self.session.execute(stmt)
         await self.session.commit()
-        assert isinstance(result, CursorResult)
-        return result.rowcount > 0
+        return result is not None
 
     async def get_category(self, id: int) -> Category | None:
         stmt = (
@@ -105,7 +104,7 @@ class TransactionRepo(BaseRepo):
         stmt = delete(Transaction).where(Transaction.id == id)
         result = await self.session.execute(stmt)
         await self.session.commit()
-        return result.rowcount > 0
+        return result is not None
 
     async def get_transaction(self, id: int) -> Transaction | None:
         stmt = (
