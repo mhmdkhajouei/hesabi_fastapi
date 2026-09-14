@@ -127,7 +127,9 @@ class Category(Base):
         ForeignKey("household.id", ondelete="CASCADE"), nullable=False
     )
 
-    budget: Mapped["Budget"] = relationship(back_populates="category", uselist=False)
+    budget: Mapped["Budget"] = relationship(
+        back_populates="category", uselist=False, cascade="all, delete-orphan"
+    )
     transactions: Mapped[list["Transaction"]] = relationship(back_populates="category")
     household: Mapped["Household"] = relationship(back_populates="categories")
 

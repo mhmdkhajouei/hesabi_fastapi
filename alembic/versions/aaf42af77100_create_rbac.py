@@ -1,8 +1,8 @@
-"""create RABC
+"""create RBAC
 
-Revision ID: a1a9037079fa
+Revision ID: aaf42af77100
 Revises: c862ae3c91d6
-Create Date: 2026-09-14 17:50:05.719757
+Create Date: 2026-09-14 21:44:03.581617
 
 """
 from typing import Sequence, Union
@@ -12,7 +12,7 @@ import sqlalchemy as sa
 
 
 # revision identifiers, used by Alembic.
-revision: str = 'a1a9037079fa'
+revision: str = 'aaf42af77100'
 down_revision: Union[str, Sequence[str], None] = 'c862ae3c91d6'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
