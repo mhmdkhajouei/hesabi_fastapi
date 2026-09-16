@@ -1,11 +1,21 @@
-from sqlalchemy import and_, delete, exists, func, select
+from typing import cast
+
+from sqlalchemy import CursorResult, and_, delete, exists, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import (
     joinedload,
     selectinload,
 )
 
-from app.db.database import Budget, Category, Transaction, User
+from app.db.database import (
+    Budget,
+    Category,
+    Household,
+    HouseholdMember,
+    HouseholdRole,
+    Transaction,
+    User,
+)
 from app.domain_models import CategoryDomain, TransactionDomain
 from app.schemas import (
     UserCreateInternal,
@@ -21,6 +31,7 @@ class CategoryRepo(BaseRepo):
     async def insert_category(self, category: CategoryDomain) -> Category:
         new_category = Category(
             name=category.name,
+            household_id=category.household_id,
         )
         new_category.budget = Budget(goal=category.budget_goal)
         self.session.add(new_category)
@@ -38,32 +49,44 @@ class CategoryRepo(BaseRepo):
         await self.session.refresh(category, ["budget"])
         return category
 
-    async def delete_category(self, id: int):
-        stmt = delete(Category).where(Category.id == id)
-        result = await self.session.execute(stmt)
+    async def delete_category(self, household_id: int, id: int) -> bool:
+        stmt = delete(Category).where(
+            Category.id == id,
+            Category.household_id == household_id,
+        )
+        result = cast(CursorResult, await self.session.execute(stmt))
         await self.session.commit()
-        return result is not None
+        return result.rowcount > 0
 
-    async def get_category(self, id: int) -> Category | None:
+    async def get_category(self, household_id: int, id: int) -> Category | None:
         stmt = (
             select(Category)
             .options(joinedload(Category.budget))
-            .where(Category.id == id)
+            .where(
+                Category.id == id,
+                Category.household_id == household_id,
+            )
         )
         category = await self.session.scalar(stmt)
         return category
 
-    async def get_all_categories(self):
+    async def get_all_categories(self, household_id: int):
         stmt = (
             select(Category)
             .options(joinedload(Category.budget))
+            .where(Category.household_id == household_id)
             .order_by(Category.id.asc())
         )
         result = (await self.session.scalars(stmt)).unique().all()
         return result
 
-    async def check_category(self, id: int) -> bool:
-        stmt = select(exists().where(Category.id == id))
+    async def check_category(self, household_id: int, id: int) -> bool:
+        stmt = select(
+            exists().where(
+                Category.id == id,
+                Category.household_id == household_id,
+            ),
+        )
         result = await self.session.scalar(stmt)
         return bool(result)
 
@@ -76,6 +99,8 @@ class TransactionRepo(BaseRepo):
     async def insert_transaction(self, data: TransactionDomain) -> Transaction:
         new_transaction = Transaction(
             amount=data.amount,
+            household_id=data.household_id,
+            created_by=data.created_by,
             type=data.type,
             date=data.date,
             note=data.note,
@@ -100,46 +125,61 @@ class TransactionRepo(BaseRepo):
         await self.session.refresh(transaction)
         return transaction
 
-    async def delete_transaction(self, id: int) -> bool:
-        stmt = delete(Transaction).where(Transaction.id == id)
-        result = await self.session.execute(stmt)
+    async def delete_transaction(self, household_id: int, id: int) -> bool:
+        stmt = delete(Transaction).where(
+            Transaction.id == id,
+            Transaction.household_id == household_id,
+        )
+        result = cast(CursorResult, await self.session.execute(stmt))
         await self.session.commit()
-        return result is not None
+        return result.rowcount > 0
 
-    async def get_transaction(self, id: int) -> Transaction | None:
+    async def get_transaction(self, household_id: int, id: int) -> Transaction | None:
         stmt = (
             select(Transaction)
             .options(joinedload(Transaction.category))
-            .where(Transaction.id == id)
+            .where(
+                Transaction.id == id,
+                Transaction.household_id == household_id,
+            )
         )
         transaction = await self.session.scalar(stmt)
         return transaction
 
-    async def get_all_transactions(self):
+    async def get_all_transactions(self, household_id: int):
         stmt = (
             select(Transaction)
             .options(selectinload(Transaction.category))
+            .where(Transaction.household_id == household_id)
             .order_by(Transaction.id.asc())
         )
         result = (await self.session.scalars(stmt)).all()
         return result
 
-    async def check_transaction(self, id: int) -> bool:
-        stmt = select(exists().where(Transaction.id == id))
+    async def check_transaction(self, household_id: int, id: int) -> bool:
+        stmt = select(
+            exists().where(
+                Transaction.id == id,
+                Transaction.household_id == household_id,
+            )
+        )
         result = await self.session.scalar(stmt)
         return bool(result)
 
 
 class ComputeRepo(BaseRepo):
-    async def get_total_amount_by_type(self, transaction_type: str) -> int:
+    async def get_total_amount_by_type(
+        self, household_id: int, transaction_type: str
+    ) -> int:
         stmt = select(func.coalesce(func.sum(Transaction.amount), 0)).where(
-            Transaction.type == transaction_type
+            Transaction.type == transaction_type,
+            Transaction.household_id == household_id,
         )
 
         result = await self.session.scalar(stmt)
-        return int(result or 0)
+        return result or 0
 
-    async def get_category_balance(self, category_id: int):
+    async def get_category_balance(self, household_id: int, category_id: int):
         stmt = (
             select(
                 Category.name.label("category_name"),
@@ -152,16 +192,17 @@ class ComputeRepo(BaseRepo):
                 and_(
                     Category.id == Transaction.category_id,
                     Transaction.type == "expense",
+                    Transaction.household_id == household_id,
                 ),
             )
-            .where(Category.id == category_id)
+            .where(Category.id == category_id, Category.household_id == household_id)
             .group_by(Category.id, Category.name, Budget.goal)
         )
 
         result = await self.session.execute(stmt)
         return result.mappings().first()
 
-    async def get_all_categories_balance(self):
+    async def get_all_categories_balance(self, household_id: int):
         stmt = (
             select(
                 Category.name.label("category_name"),
@@ -173,9 +214,11 @@ class ComputeRepo(BaseRepo):
                 Transaction,
                 and_(
                     Category.id == Transaction.category_id,
+                    Transaction.household_id == household_id,
                     Transaction.type == "expense",
                 ),
             )
+            .where(Category.household_id == household_id)
             .group_by(Category.id, Category.name, Budget.goal)
             .order_by(Category.id.asc())
         )
@@ -202,6 +245,35 @@ class UserRepo(BaseRepo):
             name=user_in.name,
         )
         self.session.add(new_user)
+        await self.session.flush()
+
+        personal_household = Household(
+            name=f"{new_user.name}" if new_user.name else "Personal Household",
+            is_personal=True,
+        )
+        self.session.add(personal_household)
+        await self.session.flush()
+
+        membership = HouseholdMember(
+            user_id=new_user.id,
+            household_id=personal_household.id,
+            role=HouseholdRole.OWNER,
+        )
+        self.session.add(membership)
         await self.session.commit()
         await self.session.refresh(new_user)
         return new_user
+
+
+class HouseholdRepo(BaseRepo):
+    async def get_personal_household_id(self, user_id: int) -> int | None:
+        stmt = (
+            select(Household.id)
+            .join(HouseholdMember, Household.id == HouseholdMember.household_id)
+            .where(
+                HouseholdMember.user_id == user_id,
+                Household.is_personal.is_(True),
+            )
+        )
+
+        return await self.session.scalar(stmt)

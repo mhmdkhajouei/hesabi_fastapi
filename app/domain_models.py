@@ -9,11 +9,18 @@ from app.errors.exceptions import BusinessRuleError
 class CategoryDomain:
     name: str
     budget_goal: int
+    household_id: int
 
     def __post_init__(self):
         self.validate()
 
     def validate(self) -> None:
+
+        if self.household_id is None or self.household_id <= 0:
+            raise BusinessRuleError(
+                message="Household ID must be a positive integer",
+                error_code="INVALID_HOUSEHOLD_ID",
+            )
 
         if self.name is None or not self.name.strip():
             raise BusinessRuleError(
@@ -39,6 +46,8 @@ class CategoryDomain:
 @dataclass
 class TransactionDomain:
     amount: int
+    household_id: int
+    created_by: int
     type: Literal["income", "expense"]
     date: datetime | None = None
     note: str | None = None
@@ -48,6 +57,18 @@ class TransactionDomain:
         self.validate()
 
     def validate(self) -> None:
+
+        if self.household_id is None or self.household_id <= 0:
+            raise BusinessRuleError(
+                message="Household ID must be a positive integer",
+                error_code="INVALID_HOUSEHOLD_ID",
+            )
+
+        if self.created_by is None or self.created_by <= 0:
+            raise BusinessRuleError(
+                message="Created by user ID must be a positive integer",
+                error_code="INVALID_USER_ID",
+            )
 
         if self.amount is None or self.amount <= 0:
             raise BusinessRuleError(
@@ -60,17 +81,16 @@ class TransactionDomain:
                 error_code="INCOME_CATEGORY_CONFLICT",
             )
         if self.date:
-            target_date = self.date
-            if target_date.tzinfo is None:
-                target_date = target_date.replace(tzinfo=UTC)
+            if self.date.tzinfo is None:
+                self.date = self.date.replace(tzinfo=UTC)
 
-            if target_date > datetime.now(UTC):
+            if self.date > datetime.now(UTC):
                 raise BusinessRuleError(
                     message="Transaction date cannot be in the future",
                     error_code="FUTURE_DATE_NOT_ALLOWED",
                 )
 
-        if self.note:
+        if self.note is not None:
             self.note = self.note.strip()
             if len(self.note) > 225:
                 raise BusinessRuleError(
