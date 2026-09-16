@@ -172,7 +172,7 @@ class Transaction(Base):
         ForeignKey("categories.id", ondelete="SET NULL"), nullable=True
     )
     household_id: Mapped[int] = mapped_column(
-        ForeignKey("household.id", ondelete="CASCADE")
+        ForeignKey("household.id", ondelete="CASCADE", nullable=False)
     )
     created_by: Mapped[int] = mapped_column(
         ForeignKey("users.id", ondelete="RESTRICT"), nullable=False
