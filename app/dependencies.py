@@ -1,7 +1,8 @@
 from datetime import UTC, datetime
 from email.utils import format_datetime
+from typing import NamedTuple
 
-from fastapi import Depends, Response
+from fastapi import Depends, Path, Response
 from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.util.typing import Annotated
@@ -13,8 +14,8 @@ from app.db.crud import (
     TransactionRepo,
     UserRepo,
 )
-from app.db.database import User, async_db_session
-from app.errors.exceptions import AuthenticationError
+from app.db.database import HouseholdRole, User, async_db_session
+from app.errors.exceptions import AuthenticationError, ForbiddenError, NotFoundError
 from app.security import decode_token
 from app.service import (
     AuthService,
@@ -167,3 +168,36 @@ def get_household_service(
     repo: Annotated[HouseholdRepo, Depends(get_household_repo)],
 ) -> HouseholdService:
     return HouseholdService(repo)
+
+
+class HouseholdAuth(NamedTuple):
+    user_id: int
+    role: HouseholdRole
+
+
+class RequireRole:
+    def __init__(self, *allowed_roles: HouseholdRole):
+        self.allowed_roles = allowed_roles
+
+    async def __call__(
+        self,
+        household_id: Annotated[int, Path(gt=0)],
+        current_user: CurrentUser,
+        repo: Annotated[HouseholdRepo, Depends(get_household_repo)],
+    ) -> HouseholdAuth:
+
+        role = await repo.get_user_role(current_user.id, household_id)
+
+        if not role:
+            raise NotFoundError(
+                message="Household not found or access denied",
+                error_code="HOUSEHOLD_NOT_FOUND",
+            )
+
+        if self.allowed_roles and role not in self.allowed_roles:
+            raise ForbiddenError(
+                message="Insufficient permissions",
+                error_code="INSUFFICIENT_PERMISSIONS",
+            )
+
+        return HouseholdAuth(user_id=current_user.id, role=role)

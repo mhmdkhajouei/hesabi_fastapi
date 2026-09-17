@@ -20,3 +20,8 @@ class BusinessRuleError(AppError):
 class AuthenticationError(AppError):
     def __init__(self, message: str, error_code: str = "AUTHENTICATION_FAILED"):
         super().__init__(message=message, status_code=401, error_code=error_code)
+
+
+class ForbiddenError(AppError):
+    def __init__(self, message: str, error_code: str = "FORBIDDEN"):
+        super().__init__(message=message, status_code=403, error_code=error_code)

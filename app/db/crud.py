@@ -277,3 +277,13 @@ class HouseholdRepo(BaseRepo):
         )
 
         return await self.session.scalar(stmt)
+
+    async def get_user_role(
+        self, user_id: int, household_id: int
+    ) -> HouseholdRole | None:
+        stmt = select(HouseholdMember.role).where(
+            HouseholdMember.user_id == user_id,
+            HouseholdMember.household_id == household_id,
+        )
+
+        return await self.session.scalar(stmt)

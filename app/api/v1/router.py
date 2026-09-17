@@ -10,19 +10,19 @@ v1_router = APIRouter(prefix="/api/v1")
 
 v1_router.include_router(
     category_route,
-    prefix="/categories",
+    prefix="/households/{hosehold_id}/categories",
     tags=["Categories"],
 )
 
 v1_router.include_router(
     transaction_route,
-    prefix="/transactions",
+    prefix="/households/{household_id}/transactions",
     tags=["Transactions"],
 )
 
 v1_router.include_router(
     compute_route,
-    prefix="/compute",
+    prefix="/households/{household_id}/compute",
     tags=["Compute"],
 )
 
