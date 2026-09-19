@@ -7,8 +7,14 @@ from app.db.crud import (
     TransactionRepo,
     UserRepo,
 )
+from app.db.database import HouseholdRole
 from app.domain_models import CategoryDomain, TransactionDomain
-from app.errors.exceptions import AuthenticationError, BusinessRuleError, NotFoundError
+from app.errors.exceptions import (
+    AuthenticationError,
+    BusinessRuleError,
+    ForbiddenError,
+    NotFoundError,
+)
 from app.schemas import (
     CategoryCreate,
     CategoryResponse,
@@ -135,7 +141,12 @@ class TransactionService:
         return TransactionResponse.model_validate(tn)
 
     async def edit_transaction(
-        self, household_id: int, transaction_id: int, data: TransactionUpdate
+        self,
+        household_id: int,
+        transaction_id: int,
+        user_id: int,
+        user_role: HouseholdRole,
+        data: TransactionUpdate,
     ) -> TransactionResponse:
 
         transaction = await self.repo.get_transaction(household_id, transaction_id)
@@ -144,6 +155,12 @@ class TransactionService:
             raise NotFoundError(
                 message=f"Transaction with id {transaction_id} not found",
                 error_code="TRANSACTION_NOT_FOUND",
+            )
+
+        if user_role == HouseholdRole.MEMBER and transaction.created_by != user_id:
+            raise ForbiddenError(
+                message="You can only edit your own transaction",
+                error_code="INSUFFICIENT_PERMISSIONS",
             )
 
         update_data = data.model_dump(exclude_unset=True)
@@ -187,7 +204,27 @@ class TransactionService:
         tn = await self.repo.update_transaction(transaction, tx)
         return TransactionResponse.model_validate(tn)
 
-    async def delete_transaction(self, household_id: int, transaction_id: int) -> None:
+    async def delete_transaction(
+        self,
+        household_id: int,
+        transaction_id: int,
+        user_id: int,
+        user_role: HouseholdRole,
+    ) -> None:
+
+        transaction = await self.repo.get_transaction(household_id, transaction_id)
+
+        if not transaction:
+            raise NotFoundError(
+                message=f"Transaction with id {transaction_id} not found",
+                error_code="TRANSACTION_NOT_FOUND",
+            )
+
+        if user_role == HouseholdRole.MEMBER and transaction.created_by != user_id:
+            raise ForbiddenError(
+                message="You can only delete your own transaction",
+                error_code="INSUFFICIENT_PERMISSIONS",
+            )
 
         deleted = await self.repo.delete_transaction(household_id, transaction_id)
 

@@ -10,7 +10,7 @@ v1_router = APIRouter(prefix="/api/v1")
 
 v1_router.include_router(
     category_route,
-    prefix="/households/{hosehold_id}/categories",
+    prefix="/households/{household_id}/categories",
     tags=["Categories"],
 )
 

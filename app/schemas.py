@@ -207,7 +207,6 @@ class UserResponse(UserBase):
     id: int
     is_active: bool
     created_at: datetime
-    personal_household_id: int | None = None
 
 
 class UserCreateInternal(UserBase):
