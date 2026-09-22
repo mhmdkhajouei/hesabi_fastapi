@@ -88,7 +88,7 @@ class TransactionUpdate(BaseModel):
         default=None, examples=["expense"]
     )
     date: datetime | None = Field(default=None, examples=["2026-08-30T10:30:00Z"])
-    note: str | None = Field(default=None, max_length=150, examples=["Updated note"])
+    note: str | None = Field(default=None, max_length=225, examples=["Updated note"])
     category_id: int | None = Field(default=None, gt=0, examples=[5])
 
 
