@@ -38,7 +38,7 @@ async def test_engine(
 
 
 @pytest_asyncio.fixture(scope="function")
-async def db_session(test_engine) -> AsyncIterator[AsyncSession]:
+async def db_session(test_engine: AsyncEngine) -> AsyncIterator[AsyncSession]:
 
     async with test_engine.connect() as connection:
         transaction = await connection.begin()
