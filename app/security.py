@@ -5,8 +5,10 @@ from uuid import uuid4
 
 import jwt
 from pwdlib import PasswordHash
+from pydantic import ValidationError
 
 from app.config import settings
+from app.errors.exceptions import AuthenticationError
 from app.schemas import TokenPayload
 
 PASSWORD_HASHER = PasswordHash.recommended()
@@ -76,12 +78,24 @@ def create_refresh_token(subject: str) -> str:
 
 
 def decode_token(token: str) -> TokenPayload:
-    decoded = jwt.decode(
-        token,
-        settings.public_key,
-        algorithms=[settings.jwt_algorithm],
-        issuer="hesabi-auth-service",
-        audience="hesabi-client",
-        options={"require": ["sub", "exp", "iat", "nbf", "type", "iss", "aud"]},
-    )
-    return TokenPayload.model_validate(decoded)
+    try:
+        decoded = jwt.decode(
+            token,
+            settings.public_key,
+            algorithms=[settings.jwt_algorithm],
+            issuer="hesabi-auth-service",
+            audience="hesabi-client",
+            options={"require": ["sub", "exp", "iat", "nbf", "type", "iss", "aud"]},
+        )
+        return TokenPayload.model_validate(decoded)
+    except jwt.ExpiredSignatureError as exc:
+        raise AuthenticationError(
+            message="Token has expired",
+            error_code="TOKEN_EXPIRED",
+        ) from exc
+
+    except (jwt.PyJWTError, ValidationError) as exc:
+        raise AuthenticationError(
+            message="Invalid or malformed token",
+            error_code="INVALID_TOKEN",
+        ) from exc

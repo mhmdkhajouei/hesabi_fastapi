@@ -1,7 +1,28 @@
 from functools import cached_property
 from pathlib import Path
+from typing import Literal
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+BASE_DIR = Path(__file__).resolve().parent.parent
+
+
+class EnvironmentSettings(BaseSettings):
+    env: Literal["development", "test", "production"] = "development"
+
+    model_config = SettingsConfigDict(
+        env_file=BASE_DIR / ".env",
+        extra="ignore",
+    )
+
+
+active_env = EnvironmentSettings().env
+
+ENV_FILES = {
+    "development": ".env",
+    "test": ".env.test",
+    "production": ".env.production",
+}
 
 
 class Settings(BaseSettings):
@@ -11,7 +32,7 @@ class Settings(BaseSettings):
         "http://localhost:8080",
     ]
 
-    env: str = "development"
+    env: str = active_env
     log_level: str = "DEBUG"
 
     db_user: str

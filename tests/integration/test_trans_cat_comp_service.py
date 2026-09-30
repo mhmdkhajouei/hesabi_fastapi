@@ -11,6 +11,8 @@ from app.db.database import (
 from app.dependencies import (
     get_category_repo,
     get_category_service,
+    get_compute_repo,
+    get_compute_service,
     get_transaction_repo,
     get_transaction_service,
 )
@@ -450,3 +452,174 @@ class TestTransactionService:
         tx_ids = [t.id for t in results]
         assert tx_1.id in tx_ids
         assert tx_2.id in tx_ids
+
+
+"""
+--------------------------------
+Compute
+--------------------------------
+"""
+
+
+@pytest.fixture
+def compute_service(db_session):
+    repo = get_compute_repo(db_session)
+    service = get_compute_service(repo)
+    return service
+
+
+class TestComputeService:
+    async def test_get_financial_summary_empty(self, compute_service, seed_household):
+        summary = await compute_service.get_financial_summary(seed_household.id)
+
+        assert summary["income"] == 0
+        assert summary["expense"] == 0
+        assert summary["total"] == 0
+
+    async def test_get_financial_summary_multiple_transactions_and_isolation(
+        self, compute_service, seed_household, seed_user, db_session
+    ):
+        other_household = Household(name="Other Family")
+        db_session.add(other_household)
+        await db_session.flush()
+
+        txs = [
+            Transaction(
+                amount=300_000,
+                type="income",
+                household_id=seed_household.id,
+                created_by=seed_user.id,
+            ),
+            Transaction(
+                amount=200_000,
+                type="income",
+                household_id=seed_household.id,
+                created_by=seed_user.id,
+            ),
+            Transaction(
+                amount=50_000,
+                type="expense",
+                household_id=seed_household.id,
+                created_by=seed_user.id,
+            ),
+            Transaction(
+                amount=70_000,
+                type="expense",
+                household_id=seed_household.id,
+                created_by=seed_user.id,
+            ),
+            Transaction(
+                amount=999_999,
+                type="income",
+                household_id=other_household.id,
+                created_by=seed_user.id,
+            ),
+        ]
+        db_session.add_all(txs)
+        await db_session.flush()
+
+        summary = await compute_service.get_financial_summary(seed_household.id)
+
+        assert summary["income"] == 500_000
+        assert summary["expense"] == 120_000
+        assert summary["total"] == 380_000
+
+    async def test_category_balance_multiple_transactions_and_overbudget(
+        self,
+        compute_service,
+        seed_household,
+        seed_user,
+        seed_category,
+        db_session,
+    ):
+        other_category = Category(
+            name="Utilities",
+            budget=Budget(goal=2_000),
+            household_id=seed_household.id,
+        )
+        db_session.add(other_category)
+        await db_session.flush()
+
+        txs = [
+            Transaction(
+                amount=2_000,
+                type="expense",
+                household_id=seed_household.id,
+                category_id=seed_category.id,
+                created_by=seed_user.id,
+            ),
+            Transaction(
+                amount=4_000,
+                type="expense",
+                household_id=seed_household.id,
+                category_id=seed_category.id,
+                created_by=seed_user.id,
+            ),
+            Transaction(
+                amount=1_000,
+                type="expense",
+                household_id=seed_household.id,
+                category_id=other_category.id,
+                created_by=seed_user.id,
+            ),
+        ]
+        db_session.add_all(txs)
+        await db_session.flush()
+
+        result = await compute_service.category_balance(
+            household_id=seed_household.id, category_id=seed_category.id
+        )
+
+        assert result["name"] == seed_category.name
+        assert result["budget_goal"] == seed_category.budget.goal
+        assert result["spent"] == 6_000
+        assert result["remaining"] == -1_000
+
+    async def test_category_balance_not_found(self, compute_service, seed_household):
+        with pytest.raises(NotFoundError) as exc_info:
+            await compute_service.category_balance(
+                household_id=seed_household.id, category_id=999_999
+            )
+
+        assert exc_info.value.error_code == "CATEGORY_NOT_FOUND"
+
+    async def test_categories_balance_success(
+        self, compute_service, seed_household, seed_user, db_session
+    ):
+        cat_1 = Category(
+            household_id=seed_household.id,
+            name="Supermarket",
+            budget=Budget(goal=10_000),
+        )
+        cat_2 = Category(
+            household_id=seed_household.id,
+            name="Gym",
+            budget=Budget(goal=20_000),
+        )
+        db_session.add_all([cat_1, cat_2])
+        await db_session.flush()
+
+        tx = Transaction(
+            amount=4_000,
+            type="expense",
+            household_id=seed_household.id,
+            category_id=cat_1.id,
+            created_by=seed_user.id,
+        )
+        db_session.add(tx)
+        await db_session.flush()
+
+        results = await compute_service.categories_balance(seed_household.id)
+
+        cat_1_res = next((r for r in results if r["name"] == "Supermarket"), None)
+        cat_2_res = next((r for r in results if r["name"] == "Gym"), None)
+
+        assert cat_1_res is not None
+        assert cat_1_res["budget_goal"] == 10_000
+        assert cat_1_res["spent"] == 4_000
+        assert cat_1_res["remaining"] == 6_000
+
+        assert cat_2_res is not None
+        assert cat_2_res["budget_goal"] == 20_000
+        assert cat_2_res["spent"] == 0
+        assert cat_2_res["remaining"] == 20_000
