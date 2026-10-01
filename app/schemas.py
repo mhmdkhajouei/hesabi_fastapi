@@ -179,7 +179,6 @@ class UserRegister(UserBase):
 
 class UserLogin(BaseModel):
     model_config = ConfigDict(
-        str_strip_whitespace=True,
         json_schema_extra={
             "example": {
                 "email": "user@example.com",

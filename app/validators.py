@@ -17,7 +17,7 @@ def validate_password_complexity(v: str) -> str:
 
     if not (has_upper and has_lower and has_digit):
         raise ValueError(
-            "Password must contain at least one uppercase letter, one lowercase letter, and one number"
+            "Password must contain at least one uppercase letter, one lowercase letter, and one number",
         )
     return v
 
