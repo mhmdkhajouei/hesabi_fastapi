@@ -1,3 +1,5 @@
+from pathlib import Path
+
 import pytest
 
 from app.config import Settings
@@ -74,3 +76,61 @@ class TestSettingsDatabaseUrl:
 
         del conf.database_url
         assert "manipulated_user" in conf.database_url
+
+
+class TestSettingsKeys:
+    def test_keys_read_content_and_stripped(self, tmp_path: Path) -> None:
+        private_file = tmp_path / "private.pem"
+        public_file = tmp_path / "public.pem"
+        raw_key = "-----BEGIN RSA PRIVATE KEY-----\ntest_secret\n-----END RSA PRIVATE KEY-----"
+
+        private_file.write_text(f"  \n\n{raw_key}\n  ")
+        public_file.write_text(f"  {raw_key}  \n")
+
+        settings = Settings(
+            db_user="test_user",
+            db_password="test_password",
+            db_name="test_db",
+            jwt_private_key_path=private_file,
+            jwt_public_key_path=public_file,
+        )
+
+        assert settings.private_key == raw_key
+        assert settings.public_key == raw_key
+
+    def test_keys_cached_properties(self, tmp_path: Path) -> None:
+        key_file = tmp_path / "key.pem"
+        key_file.write_text("initial_value")
+
+        settings = Settings(
+            db_user="test_user",
+            db_password="test_password",
+            db_name="test_db",
+            jwt_private_key_path=key_file,
+            jwt_public_key_path=key_file,
+        )
+
+        assert settings.private_key == "initial_value"
+        assert settings.public_key == "initial_value"
+
+        key_file.write_text("modified_value")
+
+        assert settings.private_key == "initial_value"
+        assert settings.public_key == "initial_value"
+
+    def test_missing_keys_raise_error(self, tmp_path: Path) -> None:
+        missing_file = tmp_path / "missing.pem"
+
+        settings = Settings(
+            db_user="test_user",
+            db_password="test_password",
+            db_name="test_db",
+            jwt_private_key_path=missing_file,
+            jwt_public_key_path=missing_file,
+        )
+
+        with pytest.raises(FileNotFoundError):
+            _ = settings.private_key
+
+        with pytest.raises(FileNotFoundError):
+            _ = settings.public_key
