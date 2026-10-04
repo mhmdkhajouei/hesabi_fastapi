@@ -200,12 +200,14 @@ class UserResponse(UserBase):
                 "name": "Mohammad Javad",
                 "is_active": True,
                 "created_at": "2026-09-11T16:00:00Z",
+                "personal_household_id": 1,
             }
         },
     )
     id: int
     is_active: bool
     created_at: datetime
+    personal_household_id: int | None = None
 
 
 class UserCreateInternal(UserBase):
