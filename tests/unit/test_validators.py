@@ -51,14 +51,14 @@ class TestValidatePasswordComplexity:
     @pytest.mark.parametrize(
         "valid_password",
         [
-            "Aa1",
-            "StrongPass1",
-            "1aA",
+            "Aa1!",
+            "StrongPass1@",
+            "1aA#",
             "P@ssw0rd2026!",
-            "123456789aA",
-            "A" * 50 + "a" * 50 + "1" * 50,
+            "123456789aA$",
+            "A" * 50 + "a" * 50 + "1" * 50 + "%",
             "Aa1!@#$%^&*()_+=-`~[]{}|;':\",./<>?",
-            "Valid1 Password",
+            "Valid1 Password&",
         ],
     )
     def test_validate_password_complexity_happy_and_boundaries(self, valid_password):
@@ -79,7 +79,7 @@ class TestValidatePasswordComplexity:
             "12345!@#$",
         ],
     )
-    def test_validate_password_complexity_raises_business_rule_error(
+    def test_validate_password_complexity_raises_missing_types_error(
         self, invalid_password
     ):
         with pytest.raises(ValueError) as exc_info:
@@ -90,15 +90,36 @@ class TestValidatePasswordComplexity:
             in str(exc_info.value)
         )
 
+    @pytest.mark.parametrize(
+        "password_without_special",
+        [
+            "Aa1",
+            "StrongPass1",
+            "1aA",
+            "123456789aA",
+            "A" * 50 + "a" * 50 + "1" * 50,
+            "Valid1 Password",
+        ],
+    )
+    def test_validate_password_complexity_raises_missing_special_char_error(
+        self, password_without_special
+    ):
+        with pytest.raises(ValueError) as exc_info:
+            validate_password_complexity(password_without_special)
+
+        assert "Password must contain at least one special character" in str(
+            exc_info.value
+        )
+
 
 class TestPydanticIntegrationTypes:
     def test_dummy_model_valid_inputs(self):
         instance = DummyModel(
             email="  Mohammad@Hesabi.Com  ",
-            password="SecurePassword2026",
+            password="SecurePassword2026!",
         )
         assert instance.email == "mohammad@hesabi.com"
-        assert instance.password == "SecurePassword2026"
+        assert instance.password == "SecurePassword2026!"
 
     @pytest.mark.parametrize(
         "invalid_email",
@@ -112,7 +133,7 @@ class TestPydanticIntegrationTypes:
     )
     def test_normalized_email_invalid_email_format(self, invalid_email):
         with pytest.raises(ValidationError):
-            DummyModel(email=invalid_email, password="ValidPassword1")
+            DummyModel(email=invalid_email, password="ValidPassword1!")
 
     def test_strong_password_pydantic_wraps_error(self):
         with pytest.raises(ValidationError) as exc_info:
