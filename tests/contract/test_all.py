@@ -1,306 +1,287 @@
 from datetime import UTC, datetime
 
 import pytest
-from httpx import AsyncClient
-from pydantic import TypeAdapter
-from sqlalchemy.ext.asyncio import AsyncSession
+from openapi_spec_validator import validate
+from pydantic import ValidationError
 
-from app.db.database import (
-    Budget,
-    Category,
-    Household,
-    HouseholdMember,
-    HouseholdRole,
-    Transaction,
-    User,
-)
+from app.main import app
 from app.schemas import (
     CategoryBalanceResponse,
-    CategoryResponse,
+    CategoryCreate,
+    CategoryUpdate,
     FinancialSummaryResponse,
-    Token,
-    TokenRefreshResponse,
+    TokenPayload,
+    TokenRefreshRequest,
+    TransactionCreate,
     TransactionResponse,
-    UserResponse,
+    UserRegister,
 )
-from app.security import create_access_token, hash_password
 
 
-@pytest.fixture
-async def contract_env(db_session: AsyncSession) -> dict:
-    raw_password = "StrongPassword123!"
-    user = User(
-        email="contract_user@example.com",
-        password_hash=hash_password(raw_password),
-        name="Contract User",
-        is_active=True,
+def test_openapi_contract_validity():
+    schema = app.openapi()
+    validate(schema)
+
+
+class TestCategoryContract:
+    def test_category_create_happy_path(self):
+        cat = CategoryCreate(name="Groceries", budget_goal=500_000)
+        assert cat.name == "Groceries"
+        assert cat.budget_goal == 500_000
+
+    @pytest.mark.parametrize(
+        "name,goal",
+        [
+            ("A", 1),
+            ("A" * 20, 100_000_000_000),
+        ],
     )
-    db_session.add(user)
-    await db_session.flush()
+    def test_category_create_boundaries(self, name: str, goal: int):
+        cat = CategoryCreate(name=name, budget_goal=goal)
+        assert cat.name == name
+        assert cat.budget_goal == goal
 
-    household = Household(name="Contract Household", is_personal=True)
-    db_session.add(household)
-    await db_session.flush()
+    def test_category_create_whitespace_stripping(self):
+        cat = CategoryCreate(name="   Healthcare   ", budget_goal=100_000)
+        assert cat.name == "Healthcare"
 
-    membership = HouseholdMember(
-        user_id=user.id,
-        household_id=household.id,
-        role=HouseholdRole.OWNER,
+    @pytest.mark.parametrize(
+        "invalid_name",
+        [
+            "",
+            "   ",
+            "A" * 21,
+        ],
     )
-    category = Category(
-        name="Contract Cat",
-        budget=Budget(goal=2000000),
-        household_id=household.id,
+    def test_category_create_invalid_name(self, invalid_name: str):
+        with pytest.raises(ValidationError) as exc:
+            CategoryCreate(name=invalid_name, budget_goal=500_000)
+        assert "name" in str(exc.value)
+
+    @pytest.mark.parametrize("invalid_goal", [0, -1, -500_000])
+    def test_category_create_invalid_budget_goal(self, invalid_goal: int):
+        with pytest.raises(ValidationError) as exc:
+            CategoryCreate(name="Utilities", budget_goal=invalid_goal)
+        assert "budget_goal" in str(exc.value)
+
+    def test_category_update_partial_happy_path(self):
+        update_name_only = CategoryUpdate(name="Gym")
+        assert update_name_only.name == "Gym"
+        assert update_name_only.budget_goal is None
+
+        update_goal_only = CategoryUpdate(budget_goal=200_000)
+        assert update_goal_only.name is None
+        assert update_goal_only.budget_goal == 200_000
+
+        update_empty = CategoryUpdate()
+        assert update_empty.name is None
+        assert update_empty.budget_goal is None
+
+
+class TestTransactionContract:
+    def test_transaction_create_happy_path(self):
+        tx = TransactionCreate(
+            amount=150_000,
+            type="expense",
+            note="Grocery bill",
+            category_id=5,
+        )
+        assert tx.amount == 150_000
+        assert tx.type == "expense"
+        assert tx.category_id == 5
+
+    def test_transaction_income_without_category(self):
+        tx = TransactionCreate(
+            amount=2_000_000,
+            type="income",
+            category_id=None,
+        )
+        assert tx.type == "income"
+        assert tx.category_id is None
+
+    @pytest.mark.parametrize("amount", [1, 10_000_000_000])
+    def test_transaction_amount_boundaries(self, amount: int):
+        tx = TransactionCreate(amount=amount, type="income")
+        assert tx.amount == amount
+
+    def test_transaction_note_boundary_edge_cases(self):
+        valid_note = "N" * 225
+        tx = TransactionCreate(amount=1000, type="expense", note=valid_note)
+        assert tx.note == valid_note
+
+        invalid_note = "N" * 226
+        with pytest.raises(ValidationError) as exc:
+            TransactionCreate(amount=1000, type="expense", note=invalid_note)
+        assert "note" in str(exc.value)
+
+    @pytest.mark.parametrize("invalid_amount", [0, -1, -100_000])
+    def test_transaction_invalid_amount(self, invalid_amount: int):
+        with pytest.raises(ValidationError) as exc:
+            TransactionCreate(amount=invalid_amount, type="income")
+        assert "amount" in str(exc.value)
+
+    @pytest.mark.parametrize("invalid_type", ["transfer", "UNKNOWN", ""])
+    def test_transaction_invalid_type(self, invalid_type: str):
+        with pytest.raises(ValidationError) as exc:
+            TransactionCreate(amount=1000, type=invalid_type)
+        assert "type" in str(exc.value)
+
+    @pytest.mark.parametrize("invalid_cat_id", [0, -5])
+    def test_transaction_invalid_category_id(self, invalid_cat_id: int):
+        with pytest.raises(ValidationError) as exc:
+            TransactionCreate(amount=1000, type="expense", category_id=invalid_cat_id)
+        assert "category_id" in str(exc.value)
+
+    def test_transaction_response_defaults_and_datetime(self):
+        now = datetime.now(UTC)
+        res = TransactionResponse(
+            id=1,
+            amount=50_000,
+            type="expense",
+            date=now,
+        )
+        assert res.currency == "TOMAN"
+        assert res.date == now
+
+
+class TestUserAndAuthContract:
+    def test_user_register_happy_path(self):
+        user = UserRegister(
+            email="Valid.User@Hesabi.COM",
+            name="Mohammad Javad",
+            password="StrongPassword123!",
+        )
+        assert user.email == "valid.user@hesabi.com"
+        assert user.name == "Mohammad Javad"
+
+    def test_user_register_whitespace_stripping(self):
+        user = UserRegister(
+            email="   whitespace@hesabi.com   ",
+            name="   Clean Name   ",
+            password="StrongPassword123!",
+        )
+        assert user.email == "whitespace@hesabi.com"
+        assert user.name == "Clean Name"
+
+    @pytest.mark.parametrize(
+        "invalid_email",
+        [
+            "not-an-email",
+            "@missingusername.com",
+            "username@.com",
+            "",
+        ],
     )
-    db_session.add_all([membership, category])
-    await db_session.flush()
+    def test_user_register_invalid_email(self, invalid_email: str):
+        with pytest.raises(ValidationError) as exc:
+            UserRegister(
+                email=invalid_email,
+                password="StrongPassword123!",
+            )
+        assert "email" in str(exc.value)
 
-    tx = Transaction(
-        amount=150000,
-        type="expense",
-        category_id=category.id,
-        household_id=household.id,
-        created_by=user.id,
-        date=datetime.now(UTC),
-        note="Initial sample expense",
+    @pytest.mark.parametrize(
+        "weak_password",
+        [
+            "short1!",
+            "OnlyLettersNoDigits!",
+            "1234567890!a",
+            "alllowercase123!",
+            "ALLUPPERCASE123!",
+            "NoSpecialCharacter123",
+            "A" * 129 + "1!",
+        ],
     )
-    db_session.add(tx)
-    await db_session.flush()
+    def test_user_register_password_policies(self, weak_password: str):
+        with pytest.raises(ValidationError) as exc:
+            UserRegister(
+                email="secure@hesabi.com",
+                password=weak_password,
+            )
+        assert "password" in str(exc.value)
 
-    return {
-        "user_id": user.id,
-        "email": user.email,
-        "raw_password": raw_password,
-        "token": create_access_token(subject=str(user.id)),
-        "household_id": household.id,
-        "category_id": category.id,
-        "transaction_id": tx.id,
-    }
-
-
-@pytest.mark.asyncio
-class TestApiContractSchemas:
-    async def test_auth_register_contract(self, async_client: AsyncClient) -> None:
-        payload = {
-            "email": "new_contract_user@example.com",
-            "name": "New Registered",
-            "password": "StrongPassword123!",
-        }
-        response = await async_client.post("/api/v1/auth/register", json=payload)
-        assert response.status_code == 201
-        validated = UserResponse.model_validate(response.json())
-        assert validated.email == payload["email"]
-        assert validated.name == payload["name"]
-
-    async def test_auth_login_contract(
-        self, async_client: AsyncClient, contract_env: dict
-    ) -> None:
-        payload = {
-            "email": contract_env["email"],
-            "password": contract_env["raw_password"],
-        }
-        response = await async_client.post("/api/v1/auth/login", json=payload)
-        assert response.status_code == 200
-        validated = Token.model_validate(response.json())
-        assert validated.token_type.lower() == "bearer"
-        assert len(validated.access_token) > 0
-        assert len(validated.refresh_token) > 0
-
-    async def test_auth_refresh_contract(
-        self, async_client: AsyncClient, contract_env: dict
-    ) -> None:
-        login_res = await async_client.post(
-            "/api/v1/auth/login",
-            json={
-                "email": contract_env["email"],
-                "password": contract_env["raw_password"],
-            },
+    def test_user_name_boundary(self):
+        valid_name = "N" * 150
+        user = UserRegister(
+            email="boundary@hesabi.com",
+            name=valid_name,
+            password="StrongPassword123!",
         )
-        refresh_token = login_res.json()["refresh_token"]
+        assert user.name == valid_name
 
-        response = await async_client.post(
-            "/api/v1/auth/refresh", json={"refresh_token": refresh_token}
-        )
-        assert response.status_code == 200
-        validated = TokenRefreshResponse.model_validate(response.json())
-        assert validated.token_type.lower() == "bearer"
-        assert len(validated.access_token) > 0
+        invalid_name = "N" * 151
+        with pytest.raises(ValidationError) as exc:
+            UserRegister(
+                email="boundary@hesabi.com",
+                name=invalid_name,
+                password="StrongPassword123!",
+            )
+        assert "name" in str(exc.value)
 
-    async def test_users_me_contract(
-        self, async_client: AsyncClient, contract_env: dict
-    ) -> None:
-        headers = {"Authorization": f"Bearer {contract_env['token']}"}
-        response = await async_client.get("/api/v1/users/me", headers=headers)
-        assert response.status_code == 200
-        validated = UserResponse.model_validate(response.json())
-        assert validated.id == contract_env["user_id"]
-        assert validated.email == contract_env["email"]
-        assert validated.personal_household_id == contract_env["household_id"]
 
-    async def test_category_create_contract(
-        self, async_client: AsyncClient, contract_env: dict
-    ) -> None:
-        headers = {"Authorization": f"Bearer {contract_env['token']}"}
-        payload = {"name": "New Contract", "budget_goal": 500000}
-        response = await async_client.post(
-            f"/api/v1/households/{contract_env['household_id']}/categories/",
-            json=payload,
-            headers=headers,
-        )
-        assert response.status_code == 201
-        validated = CategoryResponse.model_validate(response.json())
-        assert validated.name == payload["name"]
-        assert validated.budget_goal == payload["budget_goal"]
+class TestTokenContract:
+    def test_token_refresh_request_happy_path(self):
+        valid_jwt = f"{'a' * 40}.{'b' * 40}.{'c' * 40}"
+        req = TokenRefreshRequest(refresh_token=valid_jwt)
+        assert req.refresh_token == valid_jwt
 
-    async def test_category_get_contract(
-        self, async_client: AsyncClient, contract_env: dict
-    ) -> None:
-        headers = {"Authorization": f"Bearer {contract_env['token']}"}
-        response = await async_client.get(
-            f"/api/v1/households/{contract_env['household_id']}/categories/{contract_env['category_id']}",
-            headers=headers,
-        )
-        assert response.status_code == 200
-        validated = CategoryResponse.model_validate(response.json())
-        assert validated.id == contract_env["category_id"]
+    @pytest.mark.parametrize(
+        "invalid_jwt",
+        [
+            "short.jwt.string",
+            f"{'a' * 50}.{'b' * 50}",
+            f"{'a' * 40}.{'b' * 40}.{'c' * 30}$$$",
+        ],
+    )
+    def test_token_refresh_request_negative(self, invalid_jwt: str):
+        with pytest.raises(ValidationError) as exc:
+            TokenRefreshRequest(refresh_token=invalid_jwt)
+        assert "refresh_token" in str(exc.value)
 
-    async def test_category_get_all_contract(
-        self, async_client: AsyncClient, contract_env: dict
-    ) -> None:
-        headers = {"Authorization": f"Bearer {contract_env['token']}"}
-        response = await async_client.get(
-            f"/api/v1/households/{contract_env['household_id']}/categories/",
-            headers=headers,
+    def test_token_payload_type_literal(self):
+        payload = TokenPayload(
+            sub="123",
+            exp=1789146000,
+            iat=1789145100,
+            type="access",
         )
-        assert response.status_code == 200
-        validated_list = TypeAdapter(list[CategoryResponse]).validate_python(
-            response.json()
-        )
-        assert len(validated_list) >= 1
-        assert any(c.id == contract_env["category_id"] for c in validated_list)
+        assert payload.type == "access"
 
-    async def test_category_patch_contract(
-        self, async_client: AsyncClient, contract_env: dict
-    ) -> None:
-        headers = {"Authorization": f"Bearer {contract_env['token']}"}
-        payload = {"name": "Updated Cat"}
-        response = await async_client.patch(
-            f"/api/v1/households/{contract_env['household_id']}/categories/{contract_env['category_id']}",
-            json=payload,
-            headers=headers,
-        )
-        assert response.status_code == 200
-        validated = CategoryResponse.model_validate(response.json())
-        assert validated.id == contract_env["category_id"]
-        assert validated.name == payload["name"]
+        with pytest.raises(ValidationError):
+            TokenPayload(
+                sub="123",
+                exp=1789146000,
+                iat=1789145100,
+                type="custom_type",
+            )
 
-    async def test_transaction_create_contract(
-        self, async_client: AsyncClient, contract_env: dict
-    ) -> None:
-        headers = {"Authorization": f"Bearer {contract_env['token']}"}
-        payload = {
-            "amount": 250000,
-            "type": "expense",
-            "category_id": contract_env["category_id"],
-            "note": "Contract verify note",
-        }
-        response = await async_client.post(
-            f"/api/v1/households/{contract_env['household_id']}/transactions/",
-            json=payload,
-            headers=headers,
-        )
-        assert response.status_code == 201
-        validated = TransactionResponse.model_validate(response.json())
-        assert validated.amount == payload["amount"]
-        assert validated.type == payload["type"]
-        assert validated.currency == "TOMAN"
-        assert validated.category_id == payload["category_id"]
-        assert validated.note == payload["note"]
 
-    async def test_transaction_get_contract(
-        self, async_client: AsyncClient, contract_env: dict
-    ) -> None:
-        headers = {"Authorization": f"Bearer {contract_env['token']}"}
-        response = await async_client.get(
-            f"/api/v1/households/{contract_env['household_id']}/transactions/{contract_env['transaction_id']}",
-            headers=headers,
+class TestComputeAndResponsesContract:
+    def test_financial_summary_response_defaults(self):
+        summary = FinancialSummaryResponse(
+            income=1_000_000,
+            expense=400_000,
+            total=600_000,
         )
-        assert response.status_code == 200
-        validated = TransactionResponse.model_validate(response.json())
-        assert validated.id == contract_env["transaction_id"]
-        assert validated.currency == "TOMAN"
+        assert summary.currency == "TOMAN"
+        assert summary.total == 600_000
 
-    async def test_transaction_get_all_contract(
-        self, async_client: AsyncClient, contract_env: dict
-    ) -> None:
-        headers = {"Authorization": f"Bearer {contract_env['token']}"}
-        response = await async_client.get(
-            f"/api/v1/households/{contract_env['household_id']}/transactions/",
-            headers=headers,
+    def test_category_balance_negative_remaining_allowed(self):
+        balance = CategoryBalanceResponse(
+            name="Travel",
+            budget_goal=1_000_000,
+            spent=1_500_000,
+            remaining=-500_000,
         )
-        assert response.status_code == 200
-        validated_list = TypeAdapter(list[TransactionResponse]).validate_python(
-            response.json()
-        )
-        assert len(validated_list) >= 1
-        assert any(t.id == contract_env["transaction_id"] for t in validated_list)
+        assert balance.remaining == -500_000
+        assert balance.spent == 1_500_000
 
-    async def test_transaction_patch_contract(
-        self, async_client: AsyncClient, contract_env: dict
-    ) -> None:
-        headers = {"Authorization": f"Bearer {contract_env['token']}"}
-        payload = {"amount": 420000}
-        response = await async_client.patch(
-            f"/api/v1/households/{contract_env['household_id']}/transactions/{contract_env['transaction_id']}",
-            json=payload,
-            headers=headers,
-        )
-        assert response.status_code == 200
-        validated = TransactionResponse.model_validate(response.json())
-        assert validated.id == contract_env["transaction_id"]
-        assert validated.amount == payload["amount"]
-
-    async def test_compute_summary_contract(
-        self, async_client: AsyncClient, contract_env: dict
-    ) -> None:
-        headers = {"Authorization": f"Bearer {contract_env['token']}"}
-        response = await async_client.get(
-            f"/api/v1/households/{contract_env['household_id']}/compute/summary",
-            headers=headers,
-        )
-        assert response.status_code == 200
-        validated = FinancialSummaryResponse.model_validate(response.json())
-        assert validated.currency == "TOMAN"
-        assert isinstance(validated.income, int)
-        assert isinstance(validated.expense, int)
-        assert isinstance(validated.total, int)
-
-    async def test_compute_category_balance_contract(
-        self, async_client: AsyncClient, contract_env: dict
-    ) -> None:
-        headers = {"Authorization": f"Bearer {contract_env['token']}"}
-        response = await async_client.get(
-            f"/api/v1/households/{contract_env['household_id']}/compute/{contract_env['category_id']}",
-            headers=headers,
-        )
-        assert response.status_code == 200
-        validated = CategoryBalanceResponse.model_validate(response.json())
-        assert validated.name == "Contract Cat"
-        assert validated.budget_goal == 2000000
-        assert validated.spent == 150000
-        assert validated.remaining == 1850000
-
-    async def test_compute_categories_balance_all_contract(
-        self, async_client: AsyncClient, contract_env: dict
-    ) -> None:
-        headers = {"Authorization": f"Bearer {contract_env['token']}"}
-        response = await async_client.get(
-            f"/api/v1/households/{contract_env['household_id']}/compute/categories",
-            headers=headers,
-        )
-        assert response.status_code == 200
-        validated_list = TypeAdapter(list[CategoryBalanceResponse]).validate_python(
-            response.json()
-        )
-        assert len(validated_list) >= 1
-        assert any(c.name == "Contract Cat" for c in validated_list)
+    def test_category_balance_negative_spent_forbidden(self):
+        with pytest.raises(ValidationError) as exc:
+            CategoryBalanceResponse(
+                name="Travel",
+                budget_goal=1_000_000,
+                spent=-1,
+                remaining=1_000_001,
+            )
+        assert "spent" in str(exc.value)

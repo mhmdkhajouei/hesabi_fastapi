@@ -2,7 +2,7 @@ from pathlib import Path
 
 import pytest
 
-from app.config import Settings
+from app.config import Settings, settings
 
 
 class TestSettingsDatabaseUrl:
@@ -134,3 +134,9 @@ class TestSettingsKeys:
 
         with pytest.raises(FileNotFoundError):
             _ = settings.public_key
+
+
+def test_pytest_loads_enviroment():
+    assert settings.env == "test"
+    assert settings.db_name == "hesabi_test"
+    assert settings.db_user == "test_user"

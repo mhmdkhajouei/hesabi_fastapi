@@ -54,7 +54,7 @@ async def db_session(test_engine: AsyncEngine) -> AsyncIterator[AsyncSession]:
         await transaction.rollback()
 
 
-@pytest.fixture(autouse=True)
+@pytest.fixture
 def override_get_session(db_session: AsyncSession) -> Iterator[None]:
     async def _override_get_session():
         yield db_session
@@ -67,7 +67,7 @@ def override_get_session(db_session: AsyncSession) -> Iterator[None]:
 
 
 @pytest_asyncio.fixture(scope="function")
-async def async_client() -> AsyncIterator[httpx.AsyncClient]:
+async def async_client(override_get_session: None) -> AsyncIterator[httpx.AsyncClient]:
     transport = ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
         yield client
