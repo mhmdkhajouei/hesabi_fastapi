@@ -14,11 +14,14 @@ def validate_password_complexity(v: str) -> str:
     has_upper = bool(re.search(r"[A-Z]", v))
     has_lower = bool(re.search(r"[a-z]", v))
     has_digit = bool(re.search(r"\d", v))
+    special_char = re.compile(r"[@$!%*?&#^()_+\-=\[\]{};':\",.<>/\\|`~]")
 
     if not (has_upper and has_lower and has_digit):
         raise ValueError(
-            "Password must contain at least one uppercase letter, one lowercase letter, and one number"
+            "Password must contain at least one uppercase letter, one lowercase letter, and one number",
         )
+    if not special_char.search(v):
+        raise ValueError("Password must contain at least one special character")
     return v
 
 

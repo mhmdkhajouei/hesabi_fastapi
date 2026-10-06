@@ -1,6 +1,0 @@
-info:
-  name: Compute
-  type: folder
-
-request:
-  auth: inherit

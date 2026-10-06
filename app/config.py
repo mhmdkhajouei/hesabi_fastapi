@@ -1,7 +1,14 @@
+import os
 from functools import cached_property
 from pathlib import Path
+from typing import Literal
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+BASE_DIR = Path(__file__).resolve().parent.parent
+
+_raw_env = os.getenv("ENV", "development").lower()
+ENV_FILE = f".env.{_raw_env}" if _raw_env != "development" else ".env"
 
 
 class Settings(BaseSettings):
@@ -11,7 +18,7 @@ class Settings(BaseSettings):
         "http://localhost:8080",
     ]
 
-    env: str = "development"
+    env: Literal["development", "test", "production"] = "development"
     log_level: str = "DEBUG"
 
     db_user: str
@@ -26,7 +33,11 @@ class Settings(BaseSettings):
     access_token_expire_minutes: int = 15
     refresh_token_expire_days: int = 7
 
-    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+    model_config = SettingsConfigDict(
+        env_file=BASE_DIR / ENV_FILE,
+        env_file_encoding="utf-8",
+        extra="ignore",
+    )
 
     @cached_property
     def database_url(self) -> str:
