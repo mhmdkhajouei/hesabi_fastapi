@@ -263,14 +263,6 @@ class UserRepo(BaseRepo):
         await self.session.commit()
         await self.session.refresh(new_user)
 
-        new_user.households = [
-            {
-                "household_id": personal_household.id,
-                "name": personal_household.name,
-                "is_personal": personal_household.is_personal,
-                "role": membership.role.value,
-            }
-        ]
         return new_user
 
 
