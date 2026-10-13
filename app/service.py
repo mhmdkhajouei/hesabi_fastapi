@@ -4,10 +4,10 @@ from app.db.crud import (
     CategoryRepo,
     ComputeRepo,
     HouseholdRepo,
-    TransactionRepo,
     UserRepo,
 )
 from app.db.database import HouseholdRole
+from app.db.uow import UnitOfWork
 from app.domain_models import CategoryDomain, TransactionDomain
 from app.errors.exceptions import (
     AuthenticationError,
@@ -107,38 +107,52 @@ class CategoryService:
 
 
 class TransactionService:
-    def __init__(self, repo: TransactionRepo, category_repo: CategoryRepo):
-
-        self.repo = repo
-        self.category_repo = category_repo
+    def __init__(self, uow: UnitOfWork):
+        self.uow = uow
 
     async def add_transaction(
         self, household_id: int, user_id: int, data: TransactionCreate
     ) -> TransactionResponse:
 
-        tx_date = data.date or datetime.now(UTC)
+        async with self.uow:
+            tx_date = data.date or datetime.now(UTC)
 
-        tx = TransactionDomain(
-            amount=data.amount,
-            household_id=household_id,
-            created_by=user_id,
-            type=data.type,
-            category_id=data.category_id,
-            date=tx_date,
-            note=data.note,
-        )
-
-        if tx.category_id is not None:
-            exist = await self.category_repo.check_category(
-                household_id, tx.category_id
+            tx = TransactionDomain(
+                amount=data.amount,
+                household_id=household_id,
+                created_by=user_id,
+                type=data.type,
+                category_id=data.category_id,
+                date=tx_date,
+                note=data.note,
             )
-            if not exist:
-                raise NotFoundError(
-                    message=f"Category with ID {tx.category_id} not found",
-                    error_code="CATEGORY_NOT_FOUND",
+
+            if tx.category_id is not None:
+                exist = await self.uow.categories.check_category(
+                    household_id, tx.category_id
                 )
-        tn = await self.repo.insert_transaction(tx)
-        return TransactionResponse.model_validate(tn)
+                if not exist:
+                    raise NotFoundError(
+                        message=f"Category with ID {tx.category_id} not found",
+                        error_code="CATEGORY_NOT_FOUND",
+                    )
+                if tx.type == "expense":
+                    budget = await self.uow.budgets.get_budget_by_category_id(
+                        category_id=tx.category_id, for_update=True
+                    )
+
+                    if budget:
+                        current_spent = await self.uow.compute.get_category_total_spent(
+                            household_id=tx.household_id,
+                            category_id=tx.category_id,
+                        )
+                        if current_spent + tx.amount > budget.goal:
+                            raise BusinessRuleError(
+                                message="Transaction amount exceeds category budget goal",
+                                error_code="BUDGET_LIMIT_EXCEEDED",
+                            )
+            tn = await self.uow.transactions.insert_transaction(tx)
+            return TransactionResponse.model_validate(tn)
 
     async def edit_transaction(
         self,
@@ -149,60 +163,86 @@ class TransactionService:
         data: TransactionUpdate,
     ) -> TransactionResponse:
 
-        transaction = await self.repo.get_transaction(household_id, transaction_id)
-
-        if not transaction:
-            raise NotFoundError(
-                message=f"Transaction with id {transaction_id} not found",
-                error_code="TRANSACTION_NOT_FOUND",
+        async with self.uow:
+            transaction = await self.uow.transactions.get_transaction(
+                household_id, transaction_id
             )
 
-        if user_role == HouseholdRole.MEMBER and transaction.created_by != user_id:
-            raise ForbiddenError(
-                message="You can only edit your own transaction",
-                error_code="INSUFFICIENT_PERMISSIONS",
-            )
-
-        update_data = data.model_dump(exclude_unset=True)
-
-        updated_amount = update_data.get("amount", transaction.amount)
-        updated_type = update_data.get("type", transaction.type)
-
-        updated_date = update_data.get("date", transaction.date)
-        if updated_date.tzinfo is None:
-            updated_date = updated_date.replace(tzinfo=UTC)
-
-        if updated_type == "income":
-            updated_category_id = None
-        else:
-            updated_category_id = update_data.get(
-                "category_id", transaction.category_id
-            )
-
-        updated_note = update_data.get("note", transaction.note)
-
-        if updated_category_id is not None:
-            exist = await self.category_repo.check_category(
-                household_id, updated_category_id
-            )
-            if not exist:
+            if not transaction:
                 raise NotFoundError(
-                    message=f"Category with ID {updated_category_id} not found",
-                    error_code="CATEGORY_NOT_FOUND",
+                    message=f"Transaction with id {transaction_id} not found",
+                    error_code="TRANSACTION_NOT_FOUND",
                 )
 
-        tx = TransactionDomain(
-            amount=updated_amount,
-            household_id=household_id,
-            created_by=transaction.created_by,
-            type=updated_type,
-            date=updated_date,
-            category_id=updated_category_id,
-            note=updated_note,
-        )
+            if user_role == HouseholdRole.MEMBER and transaction.created_by != user_id:
+                raise ForbiddenError(
+                    message="You can only edit your own transaction",
+                    error_code="INSUFFICIENT_PERMISSIONS",
+                )
 
-        tn = await self.repo.update_transaction(transaction, tx)
-        return TransactionResponse.model_validate(tn)
+            update_data = data.model_dump(exclude_unset=True)
+
+            updated_amount = update_data.get("amount", transaction.amount)
+            updated_type = update_data.get("type", transaction.type)
+
+            updated_date = update_data.get("date", transaction.date)
+            if updated_date.tzinfo is None:
+                updated_date = updated_date.replace(tzinfo=UTC)
+
+            if updated_type == "income":
+                updated_category_id = None
+            else:
+                updated_category_id = update_data.get(
+                    "category_id", transaction.category_id
+                )
+
+            updated_note = update_data.get("note", transaction.note)
+
+            tx = TransactionDomain(
+                amount=updated_amount,
+                household_id=household_id,
+                created_by=transaction.created_by,
+                type=updated_type,
+                date=updated_date,
+                category_id=updated_category_id,
+                note=updated_note,
+            )
+
+            if tx.category_id is not None:
+                exist = await self.uow.categories.check_category(
+                    household_id, tx.category_id
+                )
+                if not exist:
+                    raise NotFoundError(
+                        message=f"Category with ID {tx.category_id} not found",
+                        error_code="CATEGORY_NOT_FOUND",
+                    )
+                if tx.type == "expense":
+                    budget = await self.uow.budgets.get_budget_by_category_id(
+                        category_id=tx.category_id, for_update=True
+                    )
+
+                    if budget:
+                        current_spent = await self.uow.compute.get_category_total_spent(
+                            household_id=tx.household_id,
+                            category_id=tx.category_id,
+                        )
+                        if (
+                            tx.category_id == transaction.category_id
+                            and transaction.type == "expense"
+                        ):
+                            new_total = current_spent - transaction.amount + tx.amount
+                        else:
+                            new_total = current_spent + tx.amount
+
+                        if new_total > budget.goal:
+                            raise BusinessRuleError(
+                                message="Transaction amount exceeds category budget goal",
+                                error_code="BUDGET_LIMIT_EXCEEDED",
+                            )
+
+            tn = await self.uow.transactions.update_transaction(transaction, tx)
+            return TransactionResponse.model_validate(tn)
 
     async def delete_transaction(
         self,
@@ -212,45 +252,54 @@ class TransactionService:
         user_role: HouseholdRole,
     ) -> None:
 
-        transaction = await self.repo.get_transaction(household_id, transaction_id)
-
-        if not transaction:
-            raise NotFoundError(
-                message=f"Transaction with id {transaction_id} not found",
-                error_code="TRANSACTION_NOT_FOUND",
+        async with self.uow:
+            transaction = await self.uow.transactions.get_transaction(
+                household_id, transaction_id
             )
 
-        if user_role == HouseholdRole.MEMBER and transaction.created_by != user_id:
-            raise ForbiddenError(
-                message="You can only delete your own transaction",
-                error_code="INSUFFICIENT_PERMISSIONS",
+            if not transaction:
+                raise NotFoundError(
+                    message=f"Transaction with id {transaction_id} not found",
+                    error_code="TRANSACTION_NOT_FOUND",
+                )
+
+            if user_role == HouseholdRole.MEMBER and transaction.created_by != user_id:
+                raise ForbiddenError(
+                    message="You can only delete your own transaction",
+                    error_code="INSUFFICIENT_PERMISSIONS",
+                )
+
+            deleted = await self.uow.transactions.delete_transaction(
+                household_id, transaction_id
             )
 
-        deleted = await self.repo.delete_transaction(household_id, transaction_id)
-
-        if not deleted:
-            raise NotFoundError(
-                message=f"Transaction with id {transaction_id} not found",
-                error_code="TRANSACTION_NOT_FOUND",
-            )
+            if not deleted:
+                raise NotFoundError(
+                    message=f"Transaction with id {transaction_id} not found",
+                    error_code="TRANSACTION_NOT_FOUND",
+                )
 
     async def get_transaction(
         self, household_id: int, transaction_id: int
     ) -> TransactionResponse:
-        transaction = await self.repo.get_transaction(household_id, transaction_id)
-
-        if not transaction:
-            raise NotFoundError(
-                message=f"Transaction with id {transaction_id} not found",
-                error_code="TRANSACTION_NOT_FOUND",
+        async with self.uow:
+            transaction = await self.uow.transactions.get_transaction(
+                household_id, transaction_id
             )
-        return TransactionResponse.model_validate(transaction)
+
+            if not transaction:
+                raise NotFoundError(
+                    message=f"Transaction with id {transaction_id} not found",
+                    error_code="TRANSACTION_NOT_FOUND",
+                )
+            return TransactionResponse.model_validate(transaction)
 
     async def get_all_transactions(
         self, household_id: int
     ) -> list[TransactionResponse]:
-        result = await self.repo.get_all_transactions(household_id)
-        return [TransactionResponse.model_validate(obj) for obj in result]
+        async with self.uow:
+            result = await self.uow.transactions.get_all_transactions(household_id)
+            return [TransactionResponse.model_validate(obj) for obj in result]
 
 
 class ComputeService:

@@ -11,10 +11,10 @@ from app.db.crud import (
     CategoryRepo,
     ComputeRepo,
     HouseholdRepo,
-    TransactionRepo,
     UserRepo,
 )
 from app.db.database import HouseholdRole, User, async_db_session
+from app.db.uow import UnitOfWork
 from app.errors.exceptions import AuthenticationError, ForbiddenError, NotFoundError
 from app.security import decode_token
 from app.service import (
@@ -32,16 +32,16 @@ async def get_session():
         yield session
 
 
+def get_uow(
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> UnitOfWork:
+    return UnitOfWork(session)
+
+
 def get_category_repo(
     session: Annotated[AsyncSession, Depends(get_session)],
 ) -> CategoryRepo:
     return CategoryRepo(session)
-
-
-def get_transaction_repo(
-    session: Annotated[AsyncSession, Depends(get_session)],
-) -> TransactionRepo:
-    return TransactionRepo(session)
 
 
 def get_category_service(
@@ -51,10 +51,9 @@ def get_category_service(
 
 
 def get_transaction_service(
-    repo: Annotated[TransactionRepo, Depends(get_transaction_repo)],
-    category_repo: Annotated[CategoryRepo, Depends(get_category_repo)],
+    uow: Annotated[UnitOfWork, Depends(get_uow)],
 ) -> TransactionService:
-    return TransactionService(repo, category_repo)
+    return TransactionService(uow)
 
 
 def get_compute_repo(

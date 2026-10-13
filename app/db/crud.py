@@ -92,7 +92,16 @@ class CategoryRepo(BaseRepo):
 
 
 class BudgetRepo(BaseRepo):
-    pass
+    async def get_budget_by_category_id(
+        self, category_id: int, for_update: bool = False
+    ) -> Budget | None:
+        stmt = select(Budget).where(Budget.category_id == category_id)
+
+        if for_update:
+            stmt = stmt.with_for_update()
+
+        result = await self.session.scalar(stmt)
+        return result
 
 
 class TransactionRepo(BaseRepo):
@@ -107,7 +116,7 @@ class TransactionRepo(BaseRepo):
             category_id=data.category_id,
         )
         self.session.add(new_transaction)
-        await self.session.commit()
+        await self.session.flush()
         await self.session.refresh(new_transaction)
         return new_transaction
 
@@ -121,7 +130,7 @@ class TransactionRepo(BaseRepo):
         transaction.note = data.note
         transaction.category_id = data.category_id
 
-        await self.session.commit()
+        await self.session.flush()
         await self.session.refresh(transaction)
         return transaction
 
@@ -131,7 +140,7 @@ class TransactionRepo(BaseRepo):
             Transaction.household_id == household_id,
         )
         result = cast(CursorResult, await self.session.execute(stmt))
-        await self.session.commit()
+        await self.session.flush()
         return result.rowcount > 0
 
     async def get_transaction(self, household_id: int, id: int) -> Transaction | None:
@@ -225,6 +234,16 @@ class ComputeRepo(BaseRepo):
 
         result = await self.session.execute(stmt)
         return result.mappings().all()
+
+    async def get_category_total_spent(self, household_id: int, category_id: int):
+        stmt = select(func.coalesce(func.sum(Transaction.amount), 0)).where(
+            Transaction.category_id == category_id,
+            Transaction.household_id == household_id,
+            Transaction.type == "expense",
+        )
+
+        result = await self.session.scalar(stmt)
+        return result
 
 
 class UserRepo(BaseRepo):

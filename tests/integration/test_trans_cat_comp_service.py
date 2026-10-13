@@ -1,4 +1,7 @@
+import asyncio
+
 import pytest
+from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
 
 from app.db.database import (
     Budget,
@@ -13,14 +16,15 @@ from app.dependencies import (
     get_category_service,
     get_compute_repo,
     get_compute_service,
-    get_transaction_repo,
     get_transaction_service,
+    get_uow,
 )
-from app.errors.exceptions import ForbiddenError, NotFoundError
+from app.errors.exceptions import BusinessRuleError, ForbiddenError, NotFoundError
 from app.schemas import (
     CategoryCreate,
     CategoryUpdate,
     TransactionCreate,
+    TransactionResponse,
     TransactionUpdate,
 )
 
@@ -43,7 +47,7 @@ async def seed_household(db_session) -> Household:
 async def seed_category(db_session, seed_household) -> Category:
     category = Category(
         name="Groceries",
-        budget=Budget(goal=5000),
+        budget=Budget(goal=1000000),
         household_id=seed_household.id,
     )
     db_session.add(category)
@@ -171,9 +175,8 @@ Transactions
 
 @pytest.fixture
 def transaction_service(db_session):
-    repo = get_transaction_repo(db_session)
-    category_repo = get_category_repo(db_session)
-    return get_transaction_service(repo, category_repo)
+    uow = get_uow(db_session)
+    return get_transaction_service(uow)
 
 
 DUMMY_SECURE_HASH = "$2b$12$e86gOzU4mO8hE7gYQx3x8.0yY2B5V3d3gS4v2X6M0F2k6P1q9e7W2"
@@ -206,15 +209,27 @@ async def seed_member_user(db_session) -> User:
 
 
 @pytest.fixture
+async def seed_category_2(db_session, seed_household) -> Category:
+    category = Category(
+        name="HipHop",
+        budget=Budget(goal=1000000),
+        household_id=seed_household.id,
+    )
+    db_session.add(category)
+    await db_session.flush()
+    return category
+
+
+@pytest.fixture
 async def seed_transaction(
-    db_session, seed_household, seed_user, seed_category
+    db_session, seed_household, seed_user, seed_category_2
 ) -> Transaction:
     transaction = Transaction(
-        amount=150_000,
+        amount=100000,
         type="expense",
         household_id=seed_household.id,
         created_by=seed_user.id,
-        category_id=seed_category.id,
+        category_id=seed_category_2.id,
         note="Initial grocery shopping",
     )
     db_session.add(transaction)
@@ -224,12 +239,12 @@ async def seed_transaction(
 
 class TestTransactionService:
     async def test_create_expense_transaction_success(
-        self, transaction_service, seed_household, seed_user, seed_category
+        self, transaction_service, seed_household, seed_user, seed_category_2
     ):
         payload = TransactionCreate(
             amount=50_000,
             type="expense",
-            category_id=seed_category.id,
+            category_id=seed_category_2.id,
             note="Fruits",
         )
 
@@ -241,7 +256,7 @@ class TestTransactionService:
 
         assert response.id is not None
         assert response.amount == 50_000
-        assert response.category_id == seed_category.id
+        assert response.category_id == seed_category_2.id
         assert response.type == "expense"
         assert response.note == "Fruits"
 
@@ -283,6 +298,37 @@ class TestTransactionService:
 
         assert exc_info.value.error_code == "CATEGORY_NOT_FOUND"
 
+    async def test_create_expense_transaction_exact_limit(
+        self, transaction_service, seed_household, seed_user, seed_category_2
+    ):
+        payload = TransactionCreate(
+            amount=1000000,
+            type="expense",
+            category_id=seed_category_2.id,
+        )
+        response = await transaction_service.add_transaction(
+            household_id=seed_household.id,
+            user_id=seed_user.id,
+            data=payload,
+        )
+        assert response.amount == 1000000
+
+    async def test_create_expense_transaction_overbudget_fails(
+        self, transaction_service, seed_user, seed_category_2, seed_household
+    ):
+        payload = TransactionCreate(
+            amount=1000001,
+            type="expense",
+            category_id=seed_category_2.id,
+        )
+        with pytest.raises(BusinessRuleError) as exc_info:
+            await transaction_service.add_transaction(
+                household_id=seed_household.id,
+                user_id=seed_user.id,
+                data=payload,
+            )
+        assert exc_info.value.error_code == "BUDGET_LIMIT_EXCEEDED"
+
     async def test_edit_transaction_success(
         self, transaction_service, seed_transaction, seed_user
     ):
@@ -299,6 +345,55 @@ class TestTransactionService:
         assert response.id == seed_transaction.id
         assert response.amount == 200_000
         assert response.note == "Updated note"
+
+    async def test_edit_transaction_same_category_overbudget_fails(
+        self, transaction_service, seed_transaction, seed_user
+    ):
+        payload = TransactionUpdate(amount=1000001)
+
+        with pytest.raises(BusinessRuleError) as exc_info:
+            await transaction_service.edit_transaction(
+                household_id=seed_transaction.household_id,
+                transaction_id=seed_transaction.id,
+                user_id=seed_user.id,
+                user_role=HouseholdRole.OWNER,
+                data=payload,
+            )
+        assert exc_info.value.error_code == "BUDGET_LIMIT_EXCEEDED"
+
+    async def test_edit_transaction_success_change_category_exact_limit(
+        self, transaction_service, seed_transaction, seed_user, seed_category
+    ):
+        payload = TransactionUpdate(
+            amount=900000, category_id=seed_category.id, note="Updated note"
+        )
+
+        response = await transaction_service.edit_transaction(
+            household_id=seed_transaction.household_id,
+            transaction_id=seed_transaction.id,
+            user_id=seed_user.id,
+            user_role=HouseholdRole.OWNER,
+            data=payload,
+        )
+
+        assert response.id == seed_transaction.id
+        assert response.amount == 900000
+        assert response.note == "Updated note"
+
+    async def test_edit_transaction_change_category_overbudget_fails(
+        self, transaction_service, seed_transaction, seed_user, seed_category
+    ):
+        payload = TransactionUpdate(amount=1000001, category_id=seed_category.id)
+
+        with pytest.raises(BusinessRuleError) as exc_info:
+            await transaction_service.edit_transaction(
+                household_id=seed_transaction.household_id,
+                transaction_id=seed_transaction.id,
+                user_id=seed_user.id,
+                user_role=HouseholdRole.OWNER,
+                data=payload,
+            )
+        assert exc_info.value.error_code == "BUDGET_LIMIT_EXCEEDED"
 
     async def test_edit_transaction_change_type_to_income_removes_category(
         self, transaction_service, seed_transaction, seed_user
@@ -453,6 +548,147 @@ class TestTransactionService:
         assert tx_1.id in tx_ids
         assert tx_2.id in tx_ids
 
+    async def test_concurrent_transaction_pessimistic_lock_two_users(
+        self, test_engine: AsyncEngine
+    ):
+        session_factory = async_sessionmaker(test_engine, expire_on_commit=False)
+        async with session_factory() as session:
+            household = Household(name="Concurrency Family")
+            user_a = User(
+                email="user_a@hesabi.com",
+                password_hash=DUMMY_SECURE_HASH,
+                name="User A",
+                is_active=True,
+            )
+            user_b = User(
+                email="user_b@hesabi.com",
+                password_hash=DUMMY_SECURE_HASH,
+                name="User a",
+                is_active=True,
+            )
+
+            session.add_all([household, user_a, user_b])
+            await session.flush()
+
+            category = Category(
+                name="LockedCategory",
+                budget=Budget(goal=1000000),
+                household_id=household.id,
+            )
+
+            session.add(category)
+            await session.commit()
+
+            household_id = household.id
+            user_a_id = user_a.id
+            user_b_id = user_b.id
+            category_id = category.id
+
+            async def submit_expense(caller_user_id: int) -> TransactionResponse:
+                async with session_factory() as session:
+                    service = get_transaction_service(get_uow(session))
+                    payload = TransactionCreate(
+                        amount=500_000, type="expense", category_id=category_id
+                    )
+                    return await service.add_transaction(
+                        household_id=household_id,
+                        user_id=caller_user_id,
+                        data=payload,
+                    )
+
+            results = await asyncio.gather(
+                submit_expense(user_a_id),
+                submit_expense(user_b_id),
+                return_exceptions=True,
+            )
+
+            successes = [r for r in results if isinstance(r, TransactionResponse)]
+            errors = [r for r in results if isinstance(r, Exception)]
+
+            assert len(successes) == 2
+            assert len(errors) == 0
+            assert successes[0].amount == 500000
+            assert successes[1].amount == 500000
+
+            async with session_factory() as session:
+                uow = get_uow(session)
+                async with uow:
+                    spent = await uow.compute.get_category_total_spent(
+                        household_id=household_id,
+                        category_id=category_id,
+                    )
+                    assert spent == 1000000
+
+    async def test_concurrent_transaction_overbudget_pessimistic_lock_two_users(
+        self, test_engine: AsyncEngine
+    ):
+        session_factory = async_sessionmaker(test_engine, expire_on_commit=False)
+        async with session_factory() as session:
+            household = Household(name="Concurrency Family")
+            user_a = User(
+                email="user_a_over@hesabi.com",
+                password_hash=DUMMY_SECURE_HASH,
+                name="User A",
+                is_active=True,
+            )
+            user_b = User(
+                email="user_b_over@hesabi.com",
+                password_hash=DUMMY_SECURE_HASH,
+                name="User a",
+                is_active=True,
+            )
+
+            session.add_all([household, user_a, user_b])
+            await session.flush()
+
+            category = Category(
+                name="LockedCategory",
+                budget=Budget(goal=1000000),
+                household_id=household.id,
+            )
+
+            session.add(category)
+            await session.commit()
+
+            household_id = household.id
+            user_a_id = user_a.id
+            user_b_id = user_b.id
+            category_id = category.id
+
+            async def submit_expense(caller_user_id: int) -> TransactionResponse:
+                async with session_factory() as session:
+                    service = get_transaction_service(get_uow(session))
+                    payload = TransactionCreate(
+                        amount=600_000, type="expense", category_id=category_id
+                    )
+                    return await service.add_transaction(
+                        household_id=household_id,
+                        user_id=caller_user_id,
+                        data=payload,
+                    )
+
+            results = await asyncio.gather(
+                submit_expense(user_a_id),
+                submit_expense(user_b_id),
+                return_exceptions=True,
+            )
+
+            successes = [r for r in results if isinstance(r, TransactionResponse)]
+            errors = [r for r in results if isinstance(r, BusinessRuleError)]
+
+            assert len(successes) == 1
+            assert len(errors) == 1
+            assert errors[0].error_code == "BUDGET_LIMIT_EXCEEDED"
+
+            async with session_factory() as session:
+                uow = get_uow(session)
+                async with uow:
+                    spent = await uow.compute.get_category_total_spent(
+                        household_id=household_id,
+                        category_id=category_id,
+                    )
+                    assert spent == 600000
+
 
 """
 --------------------------------
@@ -572,8 +808,8 @@ class TestComputeService:
 
         assert result["name"] == seed_category.name
         assert result["budget_goal"] == seed_category.budget.goal
-        assert result["spent"] == 6_000
-        assert result["remaining"] == -1_000
+        assert result["spent"] == 6000
+        assert result["remaining"] == 994000
 
     async def test_category_balance_not_found(self, compute_service, seed_household):
         with pytest.raises(NotFoundError) as exc_info:
