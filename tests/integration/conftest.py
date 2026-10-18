@@ -45,6 +45,7 @@ async def db_session(test_engine: AsyncEngine) -> AsyncIterator[AsyncSession]:
 
         session = AsyncSession(
             bind=connection,
+            join_transaction_mode="create_savepoint",
             expire_on_commit=False,
         )
 

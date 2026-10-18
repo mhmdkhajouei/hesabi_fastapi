@@ -1,7 +1,7 @@
 import pytest
 
 from app.db.database import User
-from app.dependencies import get_user_repo, get_user_service
+from app.dependencies import get_uow, get_user_service
 from app.errors.exceptions import BusinessRuleError
 from app.schemas import UserRegister
 
@@ -10,8 +10,8 @@ DUMMY_SECURE_HASH = "$2b$12$e86gOzU4mO8hE7gYQx3x8.0yY2B5V3d3gS4v2X6M0F2k6P1q9e7W
 
 @pytest.fixture
 def user_service(db_session):
-    repo = get_user_repo(db_session)
-    service = get_user_service(repo)
+    uow = get_uow(db_session)
+    service = get_user_service(uow)
     return service
 
 

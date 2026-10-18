@@ -35,7 +35,7 @@ class CategoryRepo(BaseRepo):
         )
         new_category.budget = Budget(goal=category.budget_goal)
         self.session.add(new_category)
-        await self.session.commit()
+        await self.session.flush()
         await self.session.refresh(new_category, ["budget"])
         return new_category
 
@@ -45,7 +45,7 @@ class CategoryRepo(BaseRepo):
         category.name = data.name
         category.budget.goal = data.budget_goal
 
-        await self.session.commit()
+        await self.session.flush()
         await self.session.refresh(category, ["budget"])
         return category
 
@@ -55,7 +55,7 @@ class CategoryRepo(BaseRepo):
             Category.household_id == household_id,
         )
         result = cast(CursorResult, await self.session.execute(stmt))
-        await self.session.commit()
+        await self.session.flush()
         return result.rowcount > 0
 
     async def get_category(self, household_id: int, id: int) -> Category | None:
@@ -279,7 +279,7 @@ class UserRepo(BaseRepo):
             role=HouseholdRole.OWNER,
         )
         self.session.add(membership)
-        await self.session.commit()
+        await self.session.flush()
         await self.session.refresh(new_user)
 
         return new_user

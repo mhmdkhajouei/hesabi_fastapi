@@ -1,6 +1,7 @@
 import asyncio
 
 import pytest
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
 
 from app.db.database import (
@@ -12,9 +13,7 @@ from app.db.database import (
     User,
 )
 from app.dependencies import (
-    get_category_repo,
     get_category_service,
-    get_compute_repo,
     get_compute_service,
     get_transaction_service,
     get_uow,
@@ -31,8 +30,8 @@ from app.schemas import (
 
 @pytest.fixture
 def category_service(db_session):
-    repo = get_category_repo(db_session)
-    return get_category_service(repo)
+    uow = get_uow(db_session)
+    return get_category_service(uow)
 
 
 @pytest.fixture
@@ -551,143 +550,165 @@ class TestTransactionService:
     async def test_concurrent_transaction_pessimistic_lock_two_users(
         self, test_engine: AsyncEngine
     ):
-        session_factory = async_sessionmaker(test_engine, expire_on_commit=False)
-        async with session_factory() as session:
-            household = Household(name="Concurrency Family")
-            user_a = User(
-                email="user_a@hesabi.com",
-                password_hash=DUMMY_SECURE_HASH,
-                name="User A",
-                is_active=True,
-            )
-            user_b = User(
-                email="user_b@hesabi.com",
-                password_hash=DUMMY_SECURE_HASH,
-                name="User a",
-                is_active=True,
-            )
-
-            session.add_all([household, user_a, user_b])
-            await session.flush()
-
-            category = Category(
-                name="LockedCategory",
-                budget=Budget(goal=1000000),
-                household_id=household.id,
-            )
-
-            session.add(category)
-            await session.commit()
-
-            household_id = household.id
-            user_a_id = user_a.id
-            user_b_id = user_b.id
-            category_id = category.id
-
-            async def submit_expense(caller_user_id: int) -> TransactionResponse:
-                async with session_factory() as session:
-                    service = get_transaction_service(get_uow(session))
-                    payload = TransactionCreate(
-                        amount=500_000, type="expense", category_id=category_id
-                    )
-                    return await service.add_transaction(
-                        household_id=household_id,
-                        user_id=caller_user_id,
-                        data=payload,
-                    )
-
-            results = await asyncio.gather(
-                submit_expense(user_a_id),
-                submit_expense(user_b_id),
-                return_exceptions=True,
-            )
-
-            successes = [r for r in results if isinstance(r, TransactionResponse)]
-            errors = [r for r in results if isinstance(r, Exception)]
-
-            assert len(successes) == 2
-            assert len(errors) == 0
-            assert successes[0].amount == 500000
-            assert successes[1].amount == 500000
-
+        try:
+            session_factory = async_sessionmaker(test_engine, expire_on_commit=False)
             async with session_factory() as session:
-                uow = get_uow(session)
-                async with uow:
-                    spent = await uow.compute.get_category_total_spent(
-                        household_id=household_id,
-                        category_id=category_id,
+                household = Household(name="Concurrency Family")
+                user_a = User(
+                    email="user_a@hesabi.com",
+                    password_hash=DUMMY_SECURE_HASH,
+                    name="User A",
+                    is_active=True,
+                )
+                user_b = User(
+                    email="user_b@hesabi.com",
+                    password_hash=DUMMY_SECURE_HASH,
+                    name="User a",
+                    is_active=True,
+                )
+
+                session.add_all([household, user_a, user_b])
+                await session.flush()
+
+                category = Category(
+                    name="LockedCategory",
+                    budget=Budget(goal=1000000),
+                    household_id=household.id,
+                )
+
+                session.add(category)
+                await session.commit()
+
+                household_id = household.id
+                user_a_id = user_a.id
+                user_b_id = user_b.id
+                category_id = category.id
+
+                async def submit_expense(caller_user_id: int) -> TransactionResponse:
+                    async with session_factory() as session:
+                        uow = get_uow(session)
+                        async with uow:
+                            service = get_transaction_service(uow)
+                            payload = TransactionCreate(
+                                amount=500_000, type="expense", category_id=category_id
+                            )
+                            return await service.add_transaction(
+                                household_id=household_id,
+                                user_id=caller_user_id,
+                                data=payload,
+                            )
+
+                results = await asyncio.gather(
+                    submit_expense(user_a_id),
+                    submit_expense(user_b_id),
+                    return_exceptions=True,
+                )
+
+                successes = [r for r in results if isinstance(r, TransactionResponse)]
+                errors = [r for r in results if isinstance(r, Exception)]
+
+                assert len(successes) == 2
+                assert len(errors) == 0
+                assert successes[0].amount == 500000
+                assert successes[1].amount == 500000
+
+                async with session_factory() as session:
+                    uow = get_uow(session)
+                    async with uow:
+                        spent = await uow.compute.get_category_total_spent(
+                            household_id=household_id,
+                            category_id=category_id,
+                        )
+                        assert spent == 1000000
+        finally:
+            async with test_engine.begin() as conn:
+                await conn.execute(
+                    text(
+                        "TRUNCATE TABLE transactions, budgets, categories,"
+                        "household_members, household, users RESTART IDENTITY CASCADE"
                     )
-                    assert spent == 1000000
+                )
 
     async def test_concurrent_transaction_overbudget_pessimistic_lock_two_users(
         self, test_engine: AsyncEngine
     ):
-        session_factory = async_sessionmaker(test_engine, expire_on_commit=False)
-        async with session_factory() as session:
-            household = Household(name="Concurrency Family")
-            user_a = User(
-                email="user_a_over@hesabi.com",
-                password_hash=DUMMY_SECURE_HASH,
-                name="User A",
-                is_active=True,
-            )
-            user_b = User(
-                email="user_b_over@hesabi.com",
-                password_hash=DUMMY_SECURE_HASH,
-                name="User a",
-                is_active=True,
-            )
-
-            session.add_all([household, user_a, user_b])
-            await session.flush()
-
-            category = Category(
-                name="LockedCategory",
-                budget=Budget(goal=1000000),
-                household_id=household.id,
-            )
-
-            session.add(category)
-            await session.commit()
-
-            household_id = household.id
-            user_a_id = user_a.id
-            user_b_id = user_b.id
-            category_id = category.id
-
-            async def submit_expense(caller_user_id: int) -> TransactionResponse:
-                async with session_factory() as session:
-                    service = get_transaction_service(get_uow(session))
-                    payload = TransactionCreate(
-                        amount=600_000, type="expense", category_id=category_id
-                    )
-                    return await service.add_transaction(
-                        household_id=household_id,
-                        user_id=caller_user_id,
-                        data=payload,
-                    )
-
-            results = await asyncio.gather(
-                submit_expense(user_a_id),
-                submit_expense(user_b_id),
-                return_exceptions=True,
-            )
-
-            successes = [r for r in results if isinstance(r, TransactionResponse)]
-            errors = [r for r in results if isinstance(r, BusinessRuleError)]
-
-            assert len(successes) == 1
-            assert len(errors) == 1
-            assert errors[0].error_code == "BUDGET_LIMIT_EXCEEDED"
-
+        try:
+            session_factory = async_sessionmaker(test_engine, expire_on_commit=False)
             async with session_factory() as session:
-                uow = get_uow(session)
-                async with uow:
-                    spent = await uow.compute.get_category_total_spent(
-                        household_id=household_id,
-                        category_id=category_id,
+                household = Household(name="Concurrency Family")
+                user_a = User(
+                    email="user_a_over@hesabi.com",
+                    password_hash=DUMMY_SECURE_HASH,
+                    name="User A",
+                    is_active=True,
+                )
+                user_b = User(
+                    email="user_b_over@hesabi.com",
+                    password_hash=DUMMY_SECURE_HASH,
+                    name="User a",
+                    is_active=True,
+                )
+
+                session.add_all([household, user_a, user_b])
+                await session.flush()
+
+                category = Category(
+                    name="LockedCategory",
+                    budget=Budget(goal=1000000),
+                    household_id=household.id,
+                )
+
+                session.add(category)
+                await session.commit()
+
+                household_id = household.id
+                user_a_id = user_a.id
+                user_b_id = user_b.id
+                category_id = category.id
+
+                async def submit_expense(caller_user_id: int) -> TransactionResponse:
+                    async with session_factory() as session:
+                        uow = get_uow(session)
+                        async with uow:
+                            service = get_transaction_service(uow)
+                            payload = TransactionCreate(
+                                amount=600_000, type="expense", category_id=category_id
+                            )
+                            return await service.add_transaction(
+                                household_id=household_id,
+                                user_id=caller_user_id,
+                                data=payload,
+                            )
+
+                results = await asyncio.gather(
+                    submit_expense(user_a_id),
+                    submit_expense(user_b_id),
+                    return_exceptions=True,
+                )
+
+                successes = [r for r in results if isinstance(r, TransactionResponse)]
+                errors = [r for r in results if isinstance(r, BusinessRuleError)]
+
+                assert len(successes) == 1
+                assert len(errors) == 1
+                assert errors[0].error_code == "BUDGET_LIMIT_EXCEEDED"
+
+                async with session_factory() as session:
+                    uow = get_uow(session)
+                    async with uow:
+                        spent = await uow.compute.get_category_total_spent(
+                            household_id=household_id,
+                            category_id=category_id,
+                        )
+                        assert spent == 600000
+        finally:
+            async with test_engine.begin() as conn:
+                await conn.execute(
+                    text(
+                        "TRUNCATE TABLE transactions, budgets, categories, "
+                        "household_members, household, users RESTART IDENTITY CASCADE"
                     )
-                    assert spent == 600000
+                )
 
 
 """
@@ -699,9 +720,8 @@ Compute
 
 @pytest.fixture
 def compute_service(db_session):
-    repo = get_compute_repo(db_session)
-    service = get_compute_service(repo)
-    return service
+    uow = get_uow(db_session)
+    return get_compute_service(uow)
 
 
 class TestComputeService:

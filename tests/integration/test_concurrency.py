@@ -1,4 +1,5 @@
 import asyncio
+import uuid
 
 import pytest
 from httpx import ASGITransport, AsyncClient
@@ -24,7 +25,12 @@ async def test_concurrent_transactions_do_not_exceed_budget(test_engine):
 
     async def _override_get_session():
         async with test_session_factory() as session:
-            yield session
+            try:
+                yield session
+                await session.commit()
+            except BaseException:
+                await session.rollback()
+                raise
 
     app.dependency_overrides[get_session] = _override_get_session
 

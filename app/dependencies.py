@@ -45,9 +45,9 @@ def get_category_repo(
 
 
 def get_category_service(
-    repo: Annotated[CategoryRepo, Depends(get_category_repo)],
+    uow: Annotated[UnitOfWork, Depends(get_uow)],
 ) -> CategoryService:
-    return CategoryService(repo)
+    return CategoryService(uow)
 
 
 def get_transaction_service(
@@ -63,9 +63,9 @@ def get_compute_repo(
 
 
 def get_compute_service(
-    repo: Annotated[ComputeRepo, Depends(get_compute_repo)],
+    uow: Annotated[UnitOfWork, Depends(get_uow)],
 ) -> ComputeService:
-    return ComputeService(repo)
+    return ComputeService(uow)
 
 
 class DeprecateRoute:
@@ -104,12 +104,12 @@ def get_user_repo(session: Annotated[AsyncSession, Depends(get_session)]) -> Use
     return UserRepo(session)
 
 
-def get_user_service(repo: Annotated[UserRepo, Depends(get_user_repo)]) -> UserService:
-    return UserService(repo)
+def get_user_service(uow: Annotated[UnitOfWork, Depends(get_uow)]) -> UserService:
+    return UserService(uow)
 
 
-def get_auth_service(repo: Annotated[UserRepo, Depends(get_user_repo)]) -> AuthService:
-    return AuthService(repo)
+def get_auth_service(uow: Annotated[UnitOfWork, Depends(get_uow)]) -> AuthService:
+    return AuthService(uow)
 
 
 async def get_current_user(
@@ -164,9 +164,9 @@ def get_household_repo(
 
 
 def get_household_service(
-    repo: Annotated[HouseholdRepo, Depends(get_household_repo)],
+    uow: Annotated[UnitOfWork, Depends(get_uow)],
 ) -> HouseholdService:
-    return HouseholdService(repo)
+    return HouseholdService(uow)
 
 
 class HouseholdAuth(NamedTuple):

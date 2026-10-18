@@ -1,6 +1,13 @@
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.crud import BudgetRepo, CategoryRepo, ComputeRepo, TransactionRepo
+from app.db.crud import (
+    BudgetRepo,
+    CategoryRepo,
+    ComputeRepo,
+    HouseholdRepo,
+    TransactionRepo,
+    UserRepo,
+)
 
 
 class UnitOfWork:
@@ -12,6 +19,8 @@ class UnitOfWork:
         self.categories = CategoryRepo(self.session)
         self.budgets = BudgetRepo(self.session)
         self.compute = ComputeRepo(self.session)
+        self.user = UserRepo(self.session)
+        self.household = HouseholdRepo(self.session)
         return self
 
     async def __aexit__(self, exc_type, exc_val, exc_tb):
