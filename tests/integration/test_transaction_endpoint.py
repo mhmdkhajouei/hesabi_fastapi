@@ -600,3 +600,27 @@ class TestTransactionEndpoints:
         assert data["success"] is False
         assert data["error_code"] == "TRANSACTION_NOT_FOUND"
         assert data["message"] == "Transaction with id 999999 not found"
+
+    async def test_create_expense_transaction_budget_limit_exceeded(
+        self,
+        async_client: AsyncClient,
+        transaction_test_env: dict,
+    ) -> None:
+        headers = {"Authorization": f"Bearer {transaction_test_env['alice_token']}"}
+        payload = {
+            "amount": 2000001,
+            "type": "expense",
+            "category_id": transaction_test_env["category_id"],
+            "note": "Exceeding Budget",
+        }
+
+        response = await async_client.post(
+            f"/api/v1/households/{transaction_test_env['household_id']}/transactions/",
+            json=payload,
+            headers=headers,
+        )
+
+        assert response.status_code == 422
+        data = response.json()
+        assert data["success"] is False
+        assert data["error_code"] == "BUDGET_LIMIT_EXCEEDED"

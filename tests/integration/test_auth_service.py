@@ -2,7 +2,7 @@ import pytest
 
 import app.service as service_module
 from app.db.database import User
-from app.dependencies import get_auth_service, get_user_repo
+from app.dependencies import get_auth_service, get_uow
 from app.errors.exceptions import AuthenticationError
 from app.schemas import Token, TokenRefreshRequest, TokenRefreshResponse, UserLogin
 from app.security import (
@@ -18,8 +18,8 @@ RAW_PASS = "StrongPassword123!"
 
 @pytest.fixture
 def auth_service(db_session):
-    repo = get_user_repo(db_session)
-    service = get_auth_service(repo)
+    uow = get_uow(db_session)
+    service = get_auth_service(uow)
     return service
 
 

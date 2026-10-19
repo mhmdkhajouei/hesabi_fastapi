@@ -1,6 +1,10 @@
 services:
   db:
     image: postgres:16-alpine
+    command:
+      - "postgres"
+      - "-c"
+      - "idle_in_transaction_session_timeout=5min"
     ports:
       - "5432:5432"
     environment:
@@ -24,4 +28,3 @@ services:
 
 volumes:
   postgres_data:
-

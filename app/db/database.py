@@ -8,6 +8,7 @@ from sqlalchemy import (
     DateTime,
     Enum,
     ForeignKey,
+    Index,
     MetaData,
     String,
     UniqueConstraint,
@@ -184,6 +185,17 @@ class Transaction(Base):
 
     __table_args__ = (
         CheckConstraint("amount > 0", name="check_amount_higher_than_zero"),
+        Index("ix_transactions_household_id_id", "household_id", "id"),
+        Index(
+            "ix_transactions_household_id_type_amount", "household_id", "type", "amount"
+        ),
+        Index(
+            "ix_transactions_household_id_category_id_type_amount",
+            "household_id",
+            "category_id",
+            "type",
+            "amount",
+        ),
     )
 
 

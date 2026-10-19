@@ -11,10 +11,10 @@ from app.db.crud import (
     CategoryRepo,
     ComputeRepo,
     HouseholdRepo,
-    TransactionRepo,
     UserRepo,
 )
 from app.db.database import HouseholdRole, User, async_db_session
+from app.db.uow import UnitOfWork
 from app.errors.exceptions import AuthenticationError, ForbiddenError, NotFoundError
 from app.security import decode_token
 from app.service import (
@@ -32,29 +32,28 @@ async def get_session():
         yield session
 
 
+def get_uow(
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> UnitOfWork:
+    return UnitOfWork(session)
+
+
 def get_category_repo(
     session: Annotated[AsyncSession, Depends(get_session)],
 ) -> CategoryRepo:
     return CategoryRepo(session)
 
 
-def get_transaction_repo(
-    session: Annotated[AsyncSession, Depends(get_session)],
-) -> TransactionRepo:
-    return TransactionRepo(session)
-
-
 def get_category_service(
-    repo: Annotated[CategoryRepo, Depends(get_category_repo)],
+    uow: Annotated[UnitOfWork, Depends(get_uow)],
 ) -> CategoryService:
-    return CategoryService(repo)
+    return CategoryService(uow)
 
 
 def get_transaction_service(
-    repo: Annotated[TransactionRepo, Depends(get_transaction_repo)],
-    category_repo: Annotated[CategoryRepo, Depends(get_category_repo)],
+    uow: Annotated[UnitOfWork, Depends(get_uow)],
 ) -> TransactionService:
-    return TransactionService(repo, category_repo)
+    return TransactionService(uow)
 
 
 def get_compute_repo(
@@ -64,9 +63,9 @@ def get_compute_repo(
 
 
 def get_compute_service(
-    repo: Annotated[ComputeRepo, Depends(get_compute_repo)],
+    uow: Annotated[UnitOfWork, Depends(get_uow)],
 ) -> ComputeService:
-    return ComputeService(repo)
+    return ComputeService(uow)
 
 
 class DeprecateRoute:
@@ -105,12 +104,12 @@ def get_user_repo(session: Annotated[AsyncSession, Depends(get_session)]) -> Use
     return UserRepo(session)
 
 
-def get_user_service(repo: Annotated[UserRepo, Depends(get_user_repo)]) -> UserService:
-    return UserService(repo)
+def get_user_service(uow: Annotated[UnitOfWork, Depends(get_uow)]) -> UserService:
+    return UserService(uow)
 
 
-def get_auth_service(repo: Annotated[UserRepo, Depends(get_user_repo)]) -> AuthService:
-    return AuthService(repo)
+def get_auth_service(uow: Annotated[UnitOfWork, Depends(get_uow)]) -> AuthService:
+    return AuthService(uow)
 
 
 async def get_current_user(
@@ -165,9 +164,9 @@ def get_household_repo(
 
 
 def get_household_service(
-    repo: Annotated[HouseholdRepo, Depends(get_household_repo)],
+    uow: Annotated[UnitOfWork, Depends(get_uow)],
 ) -> HouseholdService:
-    return HouseholdService(repo)
+    return HouseholdService(uow)
 
 
 class HouseholdAuth(NamedTuple):
