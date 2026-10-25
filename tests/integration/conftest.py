@@ -1,5 +1,6 @@
 from collections.abc import AsyncIterator, Iterator
 
+import fakeredis.aioredis
 import httpx
 import pytest
 import pytest_asyncio
@@ -8,7 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, create_async_engin
 from testcontainers.community.postgres import PostgresContainer
 
 from app.db.database import Base
-from app.dependencies import get_session
+from app.dependencies import get_redis_client, get_session
 from app.main import app
 
 
@@ -72,3 +73,25 @@ async def async_client(override_get_session: None) -> AsyncIterator[httpx.AsyncC
     transport = ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
         yield client
+
+
+@pytest_asyncio.fixture(scope="function")
+async def fake_redis() -> AsyncIterator[fakeredis.aioredis.FakeRedis]:
+    redis = fakeredis.aioredis.FakeRedis(decode_responses=True)
+    yield redis
+    await redis.flushall()
+    await redis.aclose()
+
+
+@pytest_asyncio.fixture(scope="function")
+async def async_client_with_redis(
+    override_get_session: None,
+    fake_redis: fakeredis.aioredis.FakeRedis,
+) -> AsyncIterator[httpx.AsyncClient]:
+    app.dependency_overrides[get_redis_client] = lambda: fake_redis
+
+    transport = ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        yield client
+
+    app.dependency_overrides.pop(get_redis_client, None)

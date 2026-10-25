@@ -27,6 +27,10 @@ class Settings(BaseSettings):
     db_password: str
     db_name: str
 
+    redis_host: str = "localhost"
+    redis_port: int = 6379
+    redis_db: int = 0
+
     jwt_private_key_path: Path = Path("certs/private_key.pem")
     jwt_public_key_path: Path = Path("certs/public_key.pem")
     jwt_algorithm: str = "RS256"
@@ -42,6 +46,10 @@ class Settings(BaseSettings):
     @cached_property
     def database_url(self) -> str:
         return f"postgresql+asyncpg://{self.db_user}:{self.db_password}@{self.db_host}:{self.db_port}/{self.db_name}"
+
+    @cached_property
+    def redis_url(self) -> str:
+        return f"redis://{self.redis_host}:{self.redis_port}/{self.redis_db}"
 
     @cached_property
     def private_key(self) -> str:

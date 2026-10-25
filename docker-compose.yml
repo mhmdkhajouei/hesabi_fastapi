@@ -37,6 +37,18 @@ services:
       - db
       - redis
 
+  worker:
+    build: .
+    command: dramatiq app.worker
+    environment:
+      - DB_HOST=db
+      - REDIS_HOST=redis
+    volumes:
+      - .:/app
+    depends_on:
+      - db
+      - redis
+
 volumes:
   postgres_data:
   redis_data:

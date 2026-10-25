@@ -4,6 +4,7 @@ from fastapi import FastAPI
 
 from app.api.v1.router import v1_router
 from app.db.database import engine
+from app.db.redis import close_redis, init_redis
 from app.errors.handlers import register_exception_handlers
 from app.middleware import register_middlewares
 
@@ -33,7 +34,9 @@ tags_metadata = [
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    await init_redis()
     yield
+    await close_redis()
     await engine.dispose()
 
 

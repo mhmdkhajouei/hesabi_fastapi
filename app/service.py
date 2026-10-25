@@ -1,5 +1,15 @@
 from datetime import UTC, datetime
 
+from redis.asyncio import Redis
+
+from app.cache import (
+    categories_key,
+    category_key,
+    deserialize,
+    invalidate_compute_cache,
+    serialize,
+    summary_key,
+)
 from app.db.database import HouseholdRole
 from app.db.uow import UnitOfWork
 from app.domain_models import CategoryDomain, TransactionDomain
@@ -36,8 +46,9 @@ from app.security import (
 
 
 class CategoryService:
-    def __init__(self, uow: UnitOfWork):
+    def __init__(self, uow: UnitOfWork, redis: Redis):
         self.uow = uow
+        self.redis = redis
 
     async def add_category(
         self, household_id: int, category: CategoryCreate
@@ -50,7 +61,10 @@ class CategoryService:
             )
 
             cg = await self.uow.categories.insert_category(category=cd)
-            return CategoryResponse.model_validate(cg)
+            response = CategoryResponse.model_validate(cg)
+
+        await invalidate_compute_cache(self.redis, household_id)
+        return response
 
     async def edit_category(
         self, household_id: int, category_id: int, data: CategoryUpdate
@@ -72,7 +86,10 @@ class CategoryService:
                 household_id=household_id,
             )
             cg = await self.uow.categories.update_category(category, cd)
-            return CategoryResponse.model_validate(cg)
+            response = CategoryResponse.model_validate(cg)
+
+        await invalidate_compute_cache(self.redis, household_id, [category_id])
+        return response
 
     async def delete_category(self, household_id: int, category_id: int) -> None:
         async with self.uow:
@@ -85,6 +102,7 @@ class CategoryService:
                     message=f"Category with ID {category_id} not found",
                     error_code="CATEGORY_NOT_FOUND",
                 )
+        await invalidate_compute_cache(self.redis, household_id, [category_id])
 
     async def get_category(
         self, household_id: int, category_id: int
@@ -105,8 +123,9 @@ class CategoryService:
 
 
 class TransactionService:
-    def __init__(self, uow: UnitOfWork):
+    def __init__(self, uow: UnitOfWork, redis: Redis):
         self.uow = uow
+        self.redis = redis
 
     async def add_transaction(
         self, household_id: int, user_id: int, data: TransactionCreate
@@ -150,7 +169,10 @@ class TransactionService:
                                 error_code="BUDGET_LIMIT_EXCEEDED",
                             )
             tn = await self.uow.transactions.insert_transaction(tx)
-            return TransactionResponse.model_validate(tn)
+            response = TransactionResponse.model_validate(tn)
+
+        await invalidate_compute_cache(self.redis, household_id, [tx.category_id])
+        return response
 
     async def edit_transaction(
         self,
@@ -177,6 +199,7 @@ class TransactionService:
                     message="You can only edit your own transaction",
                     error_code="INSUFFICIENT_PERMISSIONS",
                 )
+            old_category_id = transaction.category_id
 
             update_data = data.model_dump(exclude_unset=True)
 
@@ -240,7 +263,12 @@ class TransactionService:
                             )
 
             tn = await self.uow.transactions.update_transaction(transaction, tx)
-            return TransactionResponse.model_validate(tn)
+            response = TransactionResponse.model_validate(tn)
+
+        await invalidate_compute_cache(
+            self.redis, household_id, [old_category_id, tx.category_id]
+        )
+        return response
 
     async def delete_transaction(
         self,
@@ -266,6 +294,7 @@ class TransactionService:
                     message="You can only delete your own transaction",
                     error_code="INSUFFICIENT_PERMISSIONS",
                 )
+            category_id = transaction.category_id
 
             deleted = await self.uow.transactions.delete_transaction(
                 household_id, transaction_id
@@ -276,6 +305,7 @@ class TransactionService:
                     message=f"Transaction with id {transaction_id} not found",
                     error_code="TRANSACTION_NOT_FOUND",
                 )
+        await invalidate_compute_cache(self.redis, household_id, [category_id])
 
     async def get_transaction(
         self, household_id: int, transaction_id: int
@@ -301,10 +331,18 @@ class TransactionService:
 
 
 class ComputeService:
-    def __init__(self, uow: UnitOfWork):
+    CACHE_TTL = 60
+
+    def __init__(self, uow: UnitOfWork, redis: Redis):
         self.uow = uow
+        self.redis = redis
 
     async def get_financial_summary(self, household_id: int) -> dict:
+        cache_key = summary_key(household_id)
+        cached = await self.redis.get(cache_key)
+        if cached:
+            return deserialize(cached)
+
         async with self.uow:
             income = await self.uow.compute.get_total_amount_by_type(
                 household_id, "income"
@@ -313,9 +351,18 @@ class ComputeService:
                 household_id, "expense"
             )
 
-            return {"income": income, "expense": expense, "total": income - expense}
+            result = {"income": income, "expense": expense, "total": income - expense}
+
+        await self.redis.set(cache_key, serialize(result), ex=self.CACHE_TTL)
+        return result
 
     async def category_balance(self, household_id: int, category_id: int) -> dict:
+        cache_key = category_key(household_id, category_id)
+        cached = await self.redis.get(cache_key)
+
+        if cached:
+            return deserialize(cached)
+
         async with self.uow:
             row = await self.uow.compute.get_category_balance(household_id, category_id)
             if not row:
@@ -330,9 +377,15 @@ class ComputeService:
                 "spent": row["spent"],
                 "remaining": row["budget_goal"] - row["spent"],
             }
-            return result
+        await self.redis.set(cache_key, serialize(result), ex=self.CACHE_TTL)
+        return result
 
     async def categories_balance(self, household_id: int) -> list[dict]:
+        cache_key = categories_key(household_id)
+        cached = await self.redis.get(cache_key)
+        if cached:
+            return deserialize(cached)
+
         async with self.uow:
             rows = await self.uow.compute.get_all_categories_balance(household_id)
             result = []
@@ -346,8 +399,8 @@ class ComputeService:
                         "remaining": row["budget_goal"] - row["spent"],
                     }
                 )
-
-            return result
+        await self.redis.set(cache_key, serialize(result), ex=self.CACHE_TTL)
+        return result
 
 
 class UserService:
