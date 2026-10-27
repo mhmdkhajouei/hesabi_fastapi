@@ -1,3 +1,4 @@
+from datetime import UTC, datetime
 from typing import cast
 
 from sqlalchemy import CursorResult, and_, delete, exists, func, select
@@ -13,10 +14,17 @@ from app.db.database import (
     Household,
     HouseholdMember,
     HouseholdRole,
+    JobStatus,
+    ReportJob,
     Transaction,
     User,
 )
-from app.domain_models import CategoryDomain, TransactionDomain
+from app.domain_models import (
+    CategoryDomain,
+    ReportFiltersDomain,
+    ReportJobDomain,
+    TransactionDomain,
+)
 from app.schemas import (
     UserCreateInternal,
 )
@@ -307,3 +315,74 @@ class HouseholdRepo(BaseRepo):
         )
 
         return await self.session.scalar(stmt)
+
+
+class ReportJobRepo(BaseRepo):
+    async def insert_report_job(self, data: ReportJobDomain) -> ReportJob:
+        job = ReportJob(
+            household_id=data.household_id,
+            requested_by=data.requested_by,
+            status=JobStatus.PENDING,
+            filters=data.filters.to_dict() if data.filters else None,
+        )
+        self.session.add(job)
+        await self.session.flush()
+        await self.session.refresh(job)
+        return job
+
+    async def get_report_job_by_id(self, job_id: int) -> ReportJob | None:
+        stmt = select(ReportJob).where(ReportJob.id == job_id)
+        return await self.session.scalar(stmt)
+
+    async def get_transaction_for_report(
+        self, household_id: int, filters: ReportFiltersDomain | None
+    ) -> list[Transaction]:
+        stmt = (
+            select(Transaction)
+            .where(Transaction.household_id == household_id)
+            .options(
+                joinedload(Transaction.category),
+                joinedload(Transaction.creator),
+            )
+            .order_by(Transaction.date.desc())
+        )
+
+        if filters:
+            if filters.start_date:
+                stmt = stmt.where(Transaction.date >= filters.start_date)
+            if filters.end_date:
+                stmt = stmt.where(Transaction.date <= filters.end_date)
+            if filters.type:
+                stmt = stmt.where(Transaction.type == filters.type)
+            if filters.category_id:
+                stmt = stmt.where(Transaction.category_id == filters.category_id)
+
+        result = await self.session.scalars(stmt)
+
+        return list(result.unique().all())
+
+    async def update_job_status(
+        self,
+        job_id: int,
+        status: JobStatus,
+        file_path: str | None = None,
+        error_message: str | None = None,
+    ) -> ReportJob | None:
+        job = await self.session.get(ReportJob, job_id)
+
+        if not job:
+            return
+
+        job.status = status
+
+        if file_path is not None:
+            job.file_path = file_path
+
+        if error_message is not None:
+            job.error_message = error_message
+
+        if status in (JobStatus.COMPLETED, JobStatus.FAILED):
+            job.completed_at = datetime.now(UTC)
+
+        await self.session.flush()
+        return job

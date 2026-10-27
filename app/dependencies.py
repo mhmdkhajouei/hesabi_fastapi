@@ -24,6 +24,7 @@ from app.service import (
     CategoryService,
     ComputeService,
     HouseholdService,
+    ReportJobsService,
     TransactionService,
     UserService,
 )
@@ -78,6 +79,12 @@ def get_compute_service(
     redis: RedisClient,
 ) -> ComputeService:
     return ComputeService(uow, redis)
+
+
+def get_report_service(
+    uow: Annotated[UnitOfWork, Depends(get_uow)],
+) -> ReportJobsService:
+    return ReportJobsService(uow)
 
 
 class DeprecateRoute:

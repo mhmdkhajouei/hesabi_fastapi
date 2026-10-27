@@ -1,5 +1,5 @@
-from dataclasses import dataclass
-from datetime import UTC, datetime
+from dataclasses import asdict, dataclass
+from datetime import UTC, date, datetime
 from typing import Literal
 
 from app.errors.exceptions import BusinessRuleError
@@ -99,3 +99,65 @@ class TransactionDomain:
                 )
             if self.note == "":
                 self.note = None
+
+
+@dataclass
+class ReportFiltersDomain:
+    start_date: date | None = None
+    end_date: date | None = None
+    type: Literal["income", "expense"] | None = None
+    category_id: int | None = None
+
+    def __post_init__(self):
+        self.validate()
+
+    def validate(self) -> None:
+        if self.start_date and self.end_date and self.start_date > self.end_date:
+            raise BusinessRuleError(
+                message="Start date cannot be after end date",
+                error_code="INVALID_DATE_RANGE",
+            )
+
+        if self.category_id is not None and self.category_id <= 0:
+            raise BusinessRuleError(
+                message="Category ID must be a positive integer",
+                error_code="INVALID_CATEGORY_ID",
+            )
+
+        if self.type is not None and self.type not in ("income", "expense"):
+            raise BusinessRuleError(
+                message="Report type must be either 'income' or 'expense'",
+                error_code="INVALID_REPORT_TYPE",
+            )
+
+    def to_dict(self) -> dict:
+        return {k: v for k, v in asdict(self).items() if v is not None}
+
+    @classmethod
+    def from_dict(cls, data: dict | None) -> "ReportFiltersDomain | None":
+        if not data:
+            return None
+        return cls(**data)
+
+
+@dataclass
+class ReportJobDomain:
+    household_id: int
+    requested_by: int
+    filters: ReportFiltersDomain | None = None
+
+    def __post_init__(self):
+        self.validate()
+
+    def validate(self) -> None:
+        if self.household_id is None or self.household_id <= 0:
+            raise BusinessRuleError(
+                message="Household ID must be a positive integer",
+                error_code="INVALID_HOUSEHOLD_ID",
+            )
+
+        if self.requested_by is None or self.requested_by <= 0:
+            raise BusinessRuleError(
+                message="Requested by user ID must be a positive integer",
+                error_code="INVALID_USER_ID",
+            )

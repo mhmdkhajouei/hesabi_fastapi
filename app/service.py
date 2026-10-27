@@ -1,5 +1,9 @@
+import csv
+import io
 from datetime import UTC, datetime
+from pathlib import Path
 
+import aiofiles
 from redis.asyncio import Redis
 
 from app.cache import (
@@ -10,9 +14,14 @@ from app.cache import (
     serialize,
     summary_key,
 )
-from app.db.database import HouseholdRole
+from app.db.database import HouseholdRole, JobStatus
 from app.db.uow import UnitOfWork
-from app.domain_models import CategoryDomain, TransactionDomain
+from app.domain_models import (
+    CategoryDomain,
+    ReportFiltersDomain,
+    ReportJobDomain,
+    TransactionDomain,
+)
 from app.errors.exceptions import (
     AuthenticationError,
     BusinessRuleError,
@@ -23,6 +32,8 @@ from app.schemas import (
     CategoryCreate,
     CategoryResponse,
     CategoryUpdate,
+    ReportFilters,
+    ReportJobResponse,
     Token,
     TokenRefreshRequest,
     TokenRefreshResponse,
@@ -509,3 +520,100 @@ class HouseholdService:
     async def get_personal_household_id(self, user_id: int) -> int | None:
         async with self.uow:
             return await self.uow.household.get_personal_household_id(user_id)
+
+
+class ReportJobsService:
+    def __init__(self, uow: UnitOfWork):
+        self.uow = uow
+
+    async def create_job(
+        self, household_id: int, user_id: int, filters: ReportFilters | None
+    ) -> ReportJobResponse:
+        domain_filters = None
+        if filters:
+            domain_filters = ReportFiltersDomain(
+                start_date=filters.start_date,
+                end_date=filters.end_date,
+                type=filters.type,
+                category_id=filters.category_id,
+            )
+
+        async with self.uow:
+            domain = ReportJobDomain(
+                household_id=household_id,
+                requested_by=user_id,
+                filters=domain_filters,
+            )
+            job = await self.uow.reports.insert_report_job(domain)
+            response = ReportJobResponse.model_validate(job)
+
+        return response
+
+    async def get_job_status(
+        self, household_id: int, job_id: int, user_id: int
+    ) -> ReportJobResponse:
+        async with self.uow:
+            job = await self.uow.reports.get_report_job_by_id(job_id=job_id)
+
+            if (
+                not job
+                or job.household_id != household_id
+                or job.requested_by != user_id
+            ):
+                raise NotFoundError(
+                    message="Report job not found",
+                    error_code="REPORT_NOT_FOUND",
+                )
+
+            return ReportJobResponse.model_validate(job)
+
+    async def process_report(self, job_id: int) -> None:
+        async with self.uow:
+            job = await self.uow.reports.get_report_job_by_id(job_id=job_id)
+            if not job:
+                return
+
+            await self.uow.reports.update_job_status(job_id, JobStatus.PROCESSING)
+            await self.uow.session.commit()
+
+            try:
+                filters = ReportFiltersDomain.from_dict(job.filters)
+                transactions = await self.uow.reports.get_transaction_for_report(
+                    job.household_id, filters
+                )
+
+                reports_dir = Path("data/reports")
+                reports_dir.mkdir(parents=True, exist_ok=True)
+                file_path = reports_dir / f"report_{job_id}.csv"
+
+                async with aiofiles.open(
+                    file_path, mode="w", newline="", encoding="utf-8"
+                ) as f:
+                    output = io.StringIO()
+                    writer = csv.writer(output)
+                    writer.writerow(
+                        ["ID", "Amount", "Type", "Category", "Creator", "Date", "Note"]
+                    )
+                    for tx in transactions:
+                        writer.writerow(
+                            [
+                                tx.id,
+                                tx.amount,
+                                tx.type,
+                                tx.category.name if tx.category else "N/A",
+                                tx.creator.name if tx.creator else "N/A",
+                                tx.date.isoformat(),
+                                tx.note or "",
+                            ]
+                        )
+                    await f.write(output.getvalue())
+
+                await self.uow.reports.update_job_status(
+                    job_id, JobStatus.COMPLETED, file_path=str(file_path)
+                )
+
+            except Exception as e:
+                await self.uow.reports.update_job_status(
+                    job_id, JobStatus.FAILED, error_message=str(e)
+                )
+                raise

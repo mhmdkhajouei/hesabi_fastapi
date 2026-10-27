@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import date, datetime
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -290,3 +290,54 @@ class TokenRefreshResponse(BaseModel):
     )
     access_token: str
     token_type: str = "bearer"
+
+
+class ReportFilters(BaseModel):
+    model_config = ConfigDict(
+        str_strip_whitespace=True,
+        json_schema_extra={
+            "example": {
+                "start_date": "2026-10-01",
+                "end_date": "2026-10-31",
+                "type": "expense",
+                "category_id": 5,
+            }
+        },
+    )
+    start_date: date | None = Field(default=None)
+    end_date: date | None = Field(default=None)
+    type: Literal["income", "expense"] | None = Field(default=None)
+    category_id: int | None = Field(default=None, gt=0)
+
+
+class ReportExportRequest(BaseModel):
+    model_config = ConfigDict(
+        json_schema_extra={
+            "example": {"filters": {"start_date": "2026-10-01", "type": "expense"}}
+        }
+    )
+    filters: ReportFilters | None = Field(default=None)
+
+
+class ReportJobResponse(BaseModel):
+    model_config = ConfigDict(
+        from_attributes=True,
+        json_schema_extra={
+            "example": {
+                "id": 1,
+                "status": "pending",
+                "file_path": None,
+                "error_message": None,
+                "filters": {"type": "expense"},
+                "created_at": "2026-10-25T12:00:00Z",
+                "completed_at": None,
+            }
+        },
+    )
+    id: int
+    status: Literal["pending", "processing", "completed", "failed"]
+    file_path: str | None = None
+    error_message: str | None = None
+    filters: dict | None = None
+    created_at: datetime
+    completed_at: datetime | None = None

@@ -14,6 +14,7 @@ from sqlalchemy import (
     UniqueConstraint,
     func,
 )
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.ext.asyncio import (
     async_sessionmaker,
     create_async_engine,
@@ -45,6 +46,13 @@ class HouseholdRole(str, enum.Enum):
     VIEWER = "VIEWER"
 
 
+class JobStatus(str, enum.Enum):
+    PENDING = "pending"
+    PROCESSING = "processing"
+    COMPLETED = "completed"
+    FAILED = "failed"
+
+
 class Base(DeclarativeBase):
     metadata = MetaData(naming_convention=CONVERSION)
 
@@ -66,6 +74,9 @@ class User(Base):
         back_populates="user", cascade="all, delete-orphan"
     )
     transactions: Mapped[list["Transaction"]] = relationship(back_populates="creator")
+    report_jobs: Mapped[list["ReportJob"]] = relationship(
+        back_populates="requester", cascade="all, delete-orphan"
+    )
 
     __table_args__ = (
         CheckConstraint(
@@ -93,6 +104,9 @@ class Household(Base):
         back_populates="household", cascade="all, delete-orphan"
     )
     members: Mapped[list["HouseholdMember"]] = relationship(
+        back_populates="household", cascade="all, delete-orphan"
+    )
+    report_jobs: Mapped[list["ReportJob"]] = relationship(
         back_populates="household", cascade="all, delete-orphan"
     )
 
@@ -197,6 +211,40 @@ class Transaction(Base):
             "amount",
         ),
     )
+
+
+class ReportJob(Base):
+    __tablename__ = "report_jobs"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    household_id: Mapped[int] = mapped_column(
+        ForeignKey("household.id", ondelete="CASCADE"), nullable=False
+    )
+    requested_by: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    status: Mapped[JobStatus] = mapped_column(
+        Enum(
+            JobStatus,
+            name="report_job_status",
+            create_type=True,
+            values_callable=lambda x: [e.value for e in x],
+        ),
+        nullable=False,
+        default=JobStatus.PENDING,
+    )
+    file_path: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    error_message: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    completed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    filters: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+
+    household: Mapped["Household"] = relationship(back_populates="report_jobs")
+    requester: Mapped["User"] = relationship(back_populates="report_jobs")
 
 
 engine = create_async_engine(settings.database_url, echo=True)
