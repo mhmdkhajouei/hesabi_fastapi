@@ -38,6 +38,7 @@ CONVERSION = {
 
 TransactionType = Enum("expense", "income", name="transaction_type", create_type=True)
 CurrencyType = Enum("TOMAN", name="currency_type", create_type=True)
+FrequencyType = Enum("daily", name="frequency_type", create_type=True)
 
 
 class HouseholdRole(str, enum.Enum):
@@ -77,6 +78,9 @@ class User(Base):
     report_jobs: Mapped[list["ReportJob"]] = relationship(
         back_populates="requester", cascade="all, delete-orphan"
     )
+    recurring_transactions: Mapped[list["RecurringTransaction"]] = relationship(
+        back_populates="creator"
+    )
 
     __table_args__ = (
         CheckConstraint(
@@ -107,6 +111,9 @@ class Household(Base):
         back_populates="household", cascade="all, delete-orphan"
     )
     report_jobs: Mapped[list["ReportJob"]] = relationship(
+        back_populates="household", cascade="all, delete-orphan"
+    )
+    recurring_transactions: Mapped[list["RecurringTransaction"]] = relationship(
         back_populates="household", cascade="all, delete-orphan"
     )
 
@@ -147,6 +154,9 @@ class Category(Base):
     )
     transactions: Mapped[list["Transaction"]] = relationship(back_populates="category")
     household: Mapped["Household"] = relationship(back_populates="categories")
+    recurring_transactions: Mapped[list["RecurringTransaction"]] = relationship(
+        back_populates="category"
+    )
 
     @property
     def budget_goal(self) -> int:
@@ -245,6 +255,51 @@ class ReportJob(Base):
 
     household: Mapped["Household"] = relationship(back_populates="report_jobs")
     requester: Mapped["User"] = relationship(back_populates="report_jobs")
+
+
+class RecurringTransaction(Base):
+    __tablename__ = "recurring_transactions"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    household_id: Mapped[int] = mapped_column(
+        ForeignKey("household.id", ondelete="CASCADE"), nullable=False
+    )
+    category_id: Mapped[int | None] = mapped_column(
+        ForeignKey("categories.id", ondelete="SET NULL"), nullable=True
+    )
+    created_by: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="RESTRICT"), nullable=False
+    )
+    amount: Mapped[int] = mapped_column(nullable=False)
+    type: Mapped[Literal["income", "expense"]] = mapped_column(
+        TransactionType, nullable=False
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    currency: Mapped[str] = mapped_column(CurrencyType, default="TOMAN", nullable=False)
+    note: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    frequency: Mapped[Literal["daily"]] = mapped_column(
+        FrequencyType, default="daily", nullable=False
+    )
+    next_run_date: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
+    is_active: Mapped[bool] = mapped_column(
+        Boolean, default=True, server_default="true", nullable=False
+    )
+    household: Mapped["Household"] = relationship(
+        back_populates="recurring_transactions"
+    )
+    category: Mapped["Category"] = relationship(back_populates="recurring_transactions")
+    creator: Mapped["User"] = relationship(back_populates="recurring_transactions")
+
+    __table_args__ = (
+        CheckConstraint(
+            "amount > 0",
+            name="check_recurring_amount_higher_than_zero",
+        ),
+    )
 
 
 engine = create_async_engine(settings.database_url, echo=True)

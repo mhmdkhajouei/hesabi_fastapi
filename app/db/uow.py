@@ -5,7 +5,8 @@ from app.db.crud import (
     CategoryRepo,
     ComputeRepo,
     HouseholdRepo,
-    ReportRepo,
+    RecurringTransactionRepo,
+    ReportJobRepo,
     TransactionRepo,
     UserRepo,
 )
@@ -22,7 +23,8 @@ class UnitOfWork:
         self.compute = ComputeRepo(self.session)
         self.user = UserRepo(self.session)
         self.household = HouseholdRepo(self.session)
-        self.reports = ReportRepo(self.session)
+        self.reports = ReportJobRepo(self.session)
+        self.recurring_transactions = RecurringTransactionRepo(self.session)
         return self
 
     async def __aexit__(self, exc_type, exc_val, exc_tb):

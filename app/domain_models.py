@@ -161,3 +161,63 @@ class ReportJobDomain:
                 message="Requested by user ID must be a positive integer",
                 error_code="INVALID_USER_ID",
             )
+
+
+@dataclass
+class RecurringTransactionDomain:
+    household_id: int
+    created_by: int
+    amount: int
+    type: Literal["income", "expense"]
+    next_run_date: datetime
+    is_active: bool = True
+    note: str | None = None
+    frequency: Literal["daily"] = "daily"
+    currency: str = "TOMAN"
+    category_id: int | None = None
+
+    def __post_init__(self):
+        self.validate()
+
+    def validate(self):
+        if self.household_id is None or self.household_id <= 0:
+            raise BusinessRuleError(
+                message="Household ID must be a positive integer",
+                error_code="INVALID_HOUSEHOLD_ID",
+            )
+        if self.category_id is not None and self.category_id <= 0:
+            raise BusinessRuleError(
+                message="Category id must be a positive integer",
+                error_code="INVALID_CATEGORY_ID",
+            )
+        if self.created_by is None or self.created_by <= 0:
+            raise BusinessRuleError(
+                message="Created by user ID must be a positive integer",
+                error_code="INVALID_USER_ID",
+            )
+        if self.amount is None or self.amount <= 0:
+            raise BusinessRuleError(
+                message="Transaction amount must be strictly greater than zero",
+                error_code="INVALID_AMOUNT",
+            )
+        if self.type == "income" and self.category_id is not None:
+            raise BusinessRuleError(
+                message="Income transaction cannot reference a category",
+                error_code="INCOME_CATEGORY_CONFLICT",
+            )
+        if self.next_run_date is None:
+            raise BusinessRuleError(
+                message="Next run date is required",
+                error_code="MISSING_NEXT_RUN_DATE",
+            )
+        if self.next_run_date.tzinfo is None:
+            self.next_run_date = self.next_run_date.replace(tzinfo=UTC)
+        if self.note is not None:
+            self.note = self.note.strip()
+            if len(self.note) > 225:
+                raise BusinessRuleError(
+                    message="Note cannot exceed 225 characters",
+                    error_code="NOTE_TOO_LONG",
+                )
+            if self.note == "":
+                self.note = None

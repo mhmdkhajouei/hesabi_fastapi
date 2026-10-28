@@ -15,12 +15,14 @@ from app.db.database import (
     HouseholdMember,
     HouseholdRole,
     JobStatus,
+    RecurringTransaction,
     ReportJob,
     Transaction,
     User,
 )
 from app.domain_models import (
     CategoryDomain,
+    RecurringTransactionDomain,
     ReportFiltersDomain,
     ReportJobDomain,
     TransactionDomain,
@@ -385,4 +387,68 @@ class ReportJobRepo(BaseRepo):
             job.completed_at = datetime.now(UTC)
 
         await self.session.flush()
+
         return job
+
+
+class RecurringTransactionRepo(BaseRepo):
+    async def insert_template(
+        self, data: RecurringTransactionDomain
+    ) -> RecurringTransaction:
+        template = RecurringTransaction(
+            household_id=data.household_id,
+            created_by=data.created_by,
+            amount=data.amount,
+            type=data.type,
+            currency=data.currency,
+            note=data.note,
+            category_id=data.category_id,
+            frequency=data.frequency,
+            next_run_date=data.next_run_date,
+            is_active=data.is_active,
+        )
+        self.session.add(template)
+        await self.session.flush()
+        await self.session.refresh(template)
+        return template
+
+    async def get_template_by_id(
+        self, household_id: int, template_id: int
+    ) -> RecurringTransaction | None:
+        stmt = select(RecurringTransaction).where(
+            RecurringTransaction.id == template_id,
+            RecurringTransaction.household_id == household_id,
+        )
+        return await self.session.scalar(stmt)
+
+    async def get_by_id(self, template_id: int) -> RecurringTransaction | None:
+        stmt = select(RecurringTransaction).where(
+            RecurringTransaction.id == template_id
+        )
+        return await self.session.scalar(stmt)
+
+    async def get_all_templates(self, household_id: int) -> list[RecurringTransaction]:
+        stmt = (
+            select(RecurringTransaction)
+            .where(RecurringTransaction.household_id == household_id)
+            .order_by(RecurringTransaction.id.asc())
+        )
+        result = await self.session.scalars(stmt)
+        return list(result.all())
+
+    async def update_next_run_date(
+        self, template: RecurringTransaction, next_date: datetime
+    ) -> RecurringTransaction:
+        template.next_run_date = next_date
+        await self.session.flush()
+        await self.session.refresh(template)
+        return template
+
+    async def delete_template(self, household_id: int, template_id: int) -> bool:
+        stmt = delete(RecurringTransaction).where(
+            RecurringTransaction.id == template_id,
+            RecurringTransaction.household_id == household_id,
+        )
+        result = cast(CursorResult, await self.session.execute(stmt))
+        await self.session.flush()
+        return result.rowcount > 0

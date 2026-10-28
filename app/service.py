@@ -1,6 +1,6 @@
 import csv
 import io
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import aiofiles
@@ -18,6 +18,7 @@ from app.db.database import HouseholdRole, JobStatus
 from app.db.uow import UnitOfWork
 from app.domain_models import (
     CategoryDomain,
+    RecurringTransactionDomain,
     ReportFiltersDomain,
     ReportJobDomain,
     TransactionDomain,
@@ -32,6 +33,8 @@ from app.schemas import (
     CategoryCreate,
     CategoryResponse,
     CategoryUpdate,
+    RecurringTransactionResponse,
+    RecurringTransactionUpdate,
     ReportFilters,
     ReportJobResponse,
     Token,
@@ -139,7 +142,11 @@ class TransactionService:
         self.redis = redis
 
     async def add_transaction(
-        self, household_id: int, user_id: int, data: TransactionCreate
+        self,
+        household_id: int,
+        user_id: int,
+        data: TransactionCreate,
+        user_role: HouseholdRole,
     ) -> TransactionResponse:
 
         async with self.uow:
@@ -182,7 +189,43 @@ class TransactionService:
             tn = await self.uow.transactions.insert_transaction(tx)
             response = TransactionResponse.model_validate(tn)
 
+            template_id = None
+            delay_seconds = 0
+            if data.frequency is not None:
+                if user_role != HouseholdRole.OWNER:
+                    raise ForbiddenError(
+                        message="Only the household owner can create recurring transactions",
+                        error_code="OWNER_PERMISSION_REQUIRED",
+                    )
+                next_run = tx_date + timedelta(days=1)
+
+                template_domain = RecurringTransactionDomain(
+                    household_id=household_id,
+                    created_by=user_id,
+                    amount=data.amount,
+                    type=data.type,
+                    category_id=data.category_id,
+                    note=data.note,
+                    frequency=data.frequency,
+                    next_run_date=next_run,
+                    is_active=True,
+                )
+                template = await self.uow.recurring_transactions.insert_template(
+                    template_domain
+                )
+                template_id = template.id
+
+                delay_seconds = (next_run - datetime.now(UTC)).total_seconds()
+
         await invalidate_compute_cache(self.redis, household_id, [tx.category_id])
+
+        if template_id is not None:
+            from app.worker import process_recurring_template_actor
+
+            process_recurring_template_actor.send_with_options(
+                args=(template_id,), delay=int(delay_seconds * 1000)
+            )
+
         return response
 
     async def edit_transaction(
@@ -617,3 +660,150 @@ class ReportJobsService:
                     job_id, JobStatus.FAILED, error_message=str(e)
                 )
                 raise
+
+
+class RecurringTransactionService:
+    def __init__(self, uow: UnitOfWork):
+        self.uow = uow
+
+    async def get_all_templates(
+        self, household_id: int
+    ) -> list[RecurringTransactionResponse]:
+        async with self.uow:
+            templates = await self.uow.recurring_transactions.get_all_templates(
+                household_id
+            )
+            return [RecurringTransactionResponse.model_validate(t) for t in templates]
+
+    async def update_template(
+        self,
+        household_id: int,
+        template_id: int,
+        user_id: int,
+        user_role: HouseholdRole,
+        data: RecurringTransactionUpdate,
+    ) -> RecurringTransactionResponse:
+        if user_role != HouseholdRole.OWNER:
+            raise ForbiddenError(
+                message="Only the household owner can update recurring templates",
+                error_code="OWNER_PERMISSION_REQUIRED",
+            )
+
+        async with self.uow:
+            template = await self.uow.recurring_transactions.get_template_by_id(
+                household_id, template_id
+            )
+            if not template:
+                raise NotFoundError(
+                    message=f"Recurring template with ID {template_id} not found",
+                    error_code="RECURRING_TEMPLATE_NOT_FOUND",
+                )
+
+            update_data = data.model_dump(exclude_unset=True)
+            updated_amount = update_data.get("amount", template.amount)
+            updated_type = update_data.get("type", template.type)
+            updated_category_id = update_data.get("category_id", template.category_id)
+            updated_note = update_data.get("note", template.note)
+            updated_is_active = update_data.get("is_active", template.is_active)
+            updated_next_run = update_data.get("next_run_date", template.next_run_date)
+
+            updated_domain = RecurringTransactionDomain(
+                household_id=household_id,
+                created_by=template.created_by,
+                amount=updated_amount,
+                type=updated_type,
+                category_id=updated_category_id,
+                note=updated_note,
+                frequency=template.frequency,
+                next_run_date=updated_next_run,
+                is_active=updated_is_active,
+            )
+
+            if updated_domain.category_id is not None:
+                exist = await self.uow.categories.check_category(
+                    household_id,
+                    updated_domain.category_id,
+                )
+                if not exist:
+                    raise NotFoundError(
+                        message=f"Category with ID {updated_domain.category_id} not found",
+                        error_code="CATEGORY_NOT_FOUND",
+                    )
+                if updated_domain.type == "expense":
+                    budget = await self.uow.budgets.get_budget_by_category_id(
+                        category_id=updated_domain.category_id,
+                        for_update=True,
+                    )
+                    if budget and updated_domain.amount > budget.goal:
+                        raise BusinessRuleError(
+                            message="Template amount exceeds category budget goal",
+                            error_code="BUDGET_LIMIT_EXCEEDED",
+                        )
+            template.amount = updated_domain.amount
+            template.type = updated_domain.type
+            template.category_id = updated_domain.category_id
+            template.note = updated_domain.note
+            template.next_run_date = updated_domain.next_run_date
+            template.is_active = updated_domain.is_active
+
+            await self.uow.session.flush()
+            await self.uow.session.refresh(template)
+            return RecurringTransactionResponse.model_validate(template)
+
+    async def delete_template(
+        self,
+        household_id: int,
+        template_id: int,
+        user_id: int,
+        user_role: HouseholdRole,
+    ) -> None:
+        if user_role != HouseholdRole.OWNER:
+            raise ForbiddenError(
+                message="Only the household owner can delete recurring templates",
+                error_code="OWNER_PERMISSION_REQUIRED",
+            )
+        async with self.uow:
+            deleted = await self.uow.recurring_transactions.delete_template(
+                household_id, template_id
+            )
+            if not deleted:
+                raise NotFoundError(
+                    message=f"Recurring template with ID {template_id} not found",
+                    error_code="RECURRING_TEMPLATE_NOT_FOUND",
+                )
+
+    async def process_single_template(self, template_id: int) -> None:
+        next_date = None
+
+        async with self.uow:
+            template = await self.uow.recurring_transactions.get_by_id(template_id)
+
+            if not template or not template.is_active:
+                return
+
+            now = datetime.now(UTC)
+            if template.next_run_date > now:
+                return
+
+            tx_domain = TransactionDomain(
+                amount=template.amount,
+                household_id=template.household_id,
+                created_by=template.created_by,
+                type=template.type,
+                category_id=template.category_id,
+                note=template.note,
+                date=template.next_run_date,
+            )
+            await self.uow.transactions.insert_transaction(tx_domain)
+
+            next_date = template.next_run_date + timedelta(days=1)
+            await self.uow.recurring_transactions.update_next_run_date(
+                template, next_date
+            )
+        if next_date is not None:
+            from app.worker import process_recurring_template_actor
+
+            delay_seconds = (next_date - datetime.now(UTC)).total_seconds()
+            process_recurring_template_actor.send_with_options(
+                args=(template.id,), delay=int(delay_seconds * 1000)
+            )

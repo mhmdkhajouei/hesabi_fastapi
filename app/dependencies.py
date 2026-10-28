@@ -24,6 +24,7 @@ from app.service import (
     CategoryService,
     ComputeService,
     HouseholdService,
+    RecurringTransactionService,
     ReportJobsService,
     TransactionService,
     UserService,
@@ -85,6 +86,12 @@ def get_report_service(
     uow: Annotated[UnitOfWork, Depends(get_uow)],
 ) -> ReportJobsService:
     return ReportJobsService(uow)
+
+
+def get_recurring_transaction_service(
+    uow: Annotated[UnitOfWork, Depends(get_uow)],
+) -> RecurringTransactionService:
+    return RecurringTransactionService(uow)
 
 
 class DeprecateRoute:
