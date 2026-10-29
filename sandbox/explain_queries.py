@@ -11,27 +11,19 @@ from app.db.database import (
     Category,
     Household,
     HouseholdMember,
+    RecurringTransaction,
+    ReportJob,
     Transaction,
     async_db_session,
     engine,
 )
 
-# ---------------------------------------------------------------------------
-# Configuration
-# ---------------------------------------------------------------------------
+OUTPUT_PATH = Path("docs/explain_new_features_after.md")
 
-OUTPUT_PATH = Path("docs/explain_after.md")
-
-# Representative parameter values, one from each part of the domain.
-HID_VALUES = [1, 5, 10]  # households (first / middle / last)
-CID_VALUES = [1, 50, 100]  # categories (first / middle / last)
-TID_VALUES = [1, 50_000, 100_000]  # transactions (first / middle / last)
-UID_VALUES = [1, 10, 20]  # users (first / middle / last)
-
-
-# ---------------------------------------------------------------------------
-# SQL builders (mirror crud.py exactly, including eager loading)
-# ---------------------------------------------------------------------------
+HID_VALUES = [1, 5, 10]
+CID_VALUES = [1, 50, 100]
+TID_VALUES = [1, 50_000, 100_000]
+UID_VALUES = [1, 10, 20]
 
 
 def _compile(stmt) -> str:
@@ -41,9 +33,6 @@ def _compile(stmt) -> str:
             compile_kwargs={"literal_binds": True},
         )
     )
-
-
-# ----- CategoryRepo -----
 
 
 def get_all_categories_sql(household_id: int) -> str:
@@ -66,9 +55,6 @@ def get_category_sql(household_id: int, category_id: int) -> str:
         )
     )
     return _compile(stmt)
-
-
-# ----- TransactionRepo -----
 
 
 def get_all_transactions_sql(household_id: int) -> str:
@@ -95,9 +81,6 @@ def get_transaction_sql(household_id: int, transaction_id: int) -> str:
         )
     )
     return _compile(stmt)
-
-
-# ----- ComputeRepo -----
 
 
 def get_total_amount_by_type_sql(household_id: int, transaction_type: str) -> str:
@@ -162,9 +145,6 @@ def get_category_total_spent_sql(household_id: int, category_id: int) -> str:
     return _compile(stmt)
 
 
-# ----- HouseholdRepo -----
-
-
 def get_personal_household_id_sql(user_id: int) -> str:
     stmt = (
         select(Household.id)
@@ -185,17 +165,64 @@ def get_user_role_sql(user_id: int, household_id: int) -> str:
     return _compile(stmt)
 
 
-# ----- BudgetRepo -----
-
-
 def get_budget_by_category_id_sql(category_id: int) -> str:
     stmt = select(Budget).where(Budget.category_id == category_id)
     return _compile(stmt)
 
 
-# ---------------------------------------------------------------------------
-# Query inventory
-# ---------------------------------------------------------------------------
+def get_all_templates_sql(household_id: int) -> str:
+    stmt = (
+        select(RecurringTransaction)
+        .where(RecurringTransaction.household_id == household_id)
+        .order_by(RecurringTransaction.id.asc())
+    )
+    return _compile(stmt)
+
+
+def get_template_by_id_sql(household_id: int, template_id: int) -> str:
+    stmt = select(RecurringTransaction).where(
+        RecurringTransaction.id == template_id,
+        RecurringTransaction.household_id == household_id,
+    )
+    return _compile(stmt)
+
+
+def get_report_job_by_id_sql(job_id: int) -> str:
+    stmt = select(ReportJob).where(ReportJob.id == job_id)
+    return _compile(stmt)
+
+
+def get_transaction_for_report_sql(household_id: int) -> str:
+    stmt = (
+        select(Transaction)
+        .where(Transaction.household_id == household_id)
+        .options(
+            joinedload(Transaction.category),
+            joinedload(Transaction.creator),
+        )
+        .order_by(Transaction.date.desc())
+    )
+    return _compile(stmt)
+
+
+def get_transaction_for_report_with_filters_sql(
+    household_id: int, start_date: datetime, end_date: datetime, category_id: int
+) -> str:
+    stmt = (
+        select(Transaction)
+        .where(Transaction.household_id == household_id)
+        .where(Transaction.date >= start_date)
+        .where(Transaction.date <= end_date)
+        .where(Transaction.type == "expense")
+        .where(Transaction.category_id == category_id)
+        .options(
+            joinedload(Transaction.category),
+            joinedload(Transaction.creator),
+        )
+        .order_by(Transaction.date.desc())
+    )
+    return _compile(stmt)
+
 
 QUERIES = [
     {
@@ -282,12 +309,55 @@ QUERIES = [
         "func": get_budget_by_category_id_sql,
         "params": [{"category_id": c} for c in CID_VALUES],
     },
+    {
+        "name": "get_all_templates",
+        "func": get_all_templates_sql,
+        "params": [{"household_id": h} for h in HID_VALUES],
+    },
+    {
+        "name": "get_template_by_id",
+        "func": get_template_by_id_sql,
+        "params": [
+            {"household_id": 1, "template_id": 1},
+            {"household_id": 5, "template_id": 250},
+            {"household_id": 10, "template_id": 500},
+        ],
+    },
+    {
+        "name": "get_report_job_by_id",
+        "func": get_report_job_by_id_sql,
+        "params": [{"job_id": j} for j in [1, 500, 1000]],
+    },
+    {
+        "name": "get_transaction_for_report (no filters)",
+        "func": get_transaction_for_report_sql,
+        "params": [{"household_id": h} for h in HID_VALUES],
+    },
+    {
+        "name": "get_transaction_for_report (with filters)",
+        "func": get_transaction_for_report_with_filters_sql,
+        "params": [
+            {
+                "household_id": 1,
+                "start_date": datetime(2025, 1, 1, tzinfo=UTC),
+                "end_date": datetime(2026, 1, 1, tzinfo=UTC),
+                "category_id": 1,
+            },
+            {
+                "household_id": 5,
+                "start_date": datetime(2024, 6, 1, tzinfo=UTC),
+                "end_date": datetime(2025, 6, 1, tzinfo=UTC),
+                "category_id": 50,
+            },
+            {
+                "household_id": 10,
+                "start_date": datetime(2025, 3, 1, tzinfo=UTC),
+                "end_date": datetime(2026, 3, 1, tzinfo=UTC),
+                "category_id": 100,
+            },
+        ],
+    },
 ]
-
-
-# ---------------------------------------------------------------------------
-# EXPLAIN execution
-# ---------------------------------------------------------------------------
 
 
 async def explain_query(session, sql: str) -> list[str]:
@@ -303,16 +373,14 @@ async def fetch_category_ids_for_household(session, household_id: int) -> list[i
     return [row[0] for row in result]
 
 
-# ---------------------------------------------------------------------------
-# Main
-# ---------------------------------------------------------------------------
-
-
 async def main() -> None:
     lines: list[str] = []
-    lines.append("# EXPLAIN After Indexes\n")
+    lines.append("# EXPLAIN Baseline — New Features\n")
     lines.append(f"Generated: {datetime.now(UTC).isoformat()}\n")
-    lines.append("Dataset: 10 households, 100 categories, 100,000 transactions\n")
+    lines.append(
+        "Dataset: 10 households, 100 categories, 100,000 transactions, "
+        "500 recurring templates, 1,000 report jobs\n"
+    )
     lines.append(
         "All plans use `EXPLAIN (ANALYZE, BUFFERS)` with literal-bound parameters.\n"
     )
@@ -337,7 +405,6 @@ async def main() -> None:
                 lines.extend(plan)
                 lines.append("```\n")
 
-            # Special handling for get_all_transactions: also EXPLAIN the selectinload child query
             if query["name"].startswith("get_all_transactions"):
                 lines.append("\n### selectinload child query (representative)\n")
                 lines.append(

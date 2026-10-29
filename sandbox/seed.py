@@ -1,14 +1,23 @@
 import asyncio
 import random
 from datetime import UTC, datetime, timedelta
+from typing import Any
 
 from sqlalchemy import text
 
-from app.db.database import async_db_session, engine
-
-# ---------------------------------------------------------------------------
-# Configuration
-# ---------------------------------------------------------------------------
+from app.db.database import (
+    Budget,
+    Category,
+    Household,
+    HouseholdMember,
+    JobStatus,
+    RecurringTransaction,
+    ReportJob,
+    Transaction,
+    User,
+    async_db_session,
+    engine,
+)
 
 RANDOM_SEED = 42
 
@@ -16,21 +25,19 @@ N_HOUSEHOLDS = 10
 N_USERS_PER_HOUSEHOLD = 2
 N_CATEGORIES_PER_HOUSEHOLD = 10
 N_TRANSACTIONS_PER_HOUSEHOLD = 10_000
+N_RECURRING_PER_HOUSEHOLD = 50
+N_REPORTS_PER_HOUSEHOLD = 100
 
-# Realistic distribution: 70% expense, 30% income
 EXPENSE_RATIO = 0.70
 
-# Amount buckets (IRR / TOMAN-scale values, similar to real usage)
 AMOUNT_BUCKETS = [
-    (0.80, 10_000, 500_000),  # 80% small
-    (0.15, 500_000, 2_000_000),  # 15% medium
-    (0.05, 2_000_000, 5_000_000),  # 5% large
+    (0.80, 10_000, 500_000),
+    (0.15, 500_000, 2_000_000),
+    (0.05, 2_000_000, 5_000_000),
 ]
 
-# 24-month window for transaction dates
 DATE_WINDOW_DAYS = 730
 
-# Fake password hash (must be > 20 chars to satisfy CheckConstraint)
 FAKE_PASSWORD_HASH = (
     "$argon2id$v=19$m=65536,t=3,p=4$c2VlZF9vbmx5X25vdF9yZWFsX2hhc2g"
     "$ZmFrZV9mYWtlX2Zha2VfZmFrZV9mYWtlX2Zha2U"
@@ -49,33 +56,26 @@ CATEGORY_NAMES = [
     "Other",
 ]
 
-# ---------------------------------------------------------------------------
-# Truncate
-# ---------------------------------------------------------------------------
-
 
 async def truncate_all(session) -> None:
     await session.execute(
         text(
-            """
+            f"""
             TRUNCATE TABLE
-                transactions,
-                budgets,
-                categories,
-                household_members,
-                household,
-                users
+                {ReportJob.__tablename__},
+                {RecurringTransaction.__tablename__},
+                {Transaction.__tablename__},
+                {Budget.__tablename__},
+                {Category.__tablename__},
+                {HouseholdMember.__tablename__},
+                {Household.__tablename__},
+                {User.__tablename__}
             RESTART IDENTITY CASCADE
             """
         )
     )
     await session.commit()
     print("[seed] truncated all tables")
-
-
-# ---------------------------------------------------------------------------
-# Seeding
-# ---------------------------------------------------------------------------
 
 
 async def seed_households_and_users(session) -> None:
@@ -119,8 +119,8 @@ async def seed_households_and_users(session) -> None:
 
     await session.execute(
         text(
-            """
-            INSERT INTO household (id, name, is_personal)
+            f"""
+            INSERT INTO {Household.__tablename__} (id, name, is_personal)
             VALUES (:id, :name, :is_personal)
             """
         ),
@@ -129,8 +129,8 @@ async def seed_households_and_users(session) -> None:
 
     await session.execute(
         text(
-            """
-            INSERT INTO users (id, name, email, password_hash, is_active)
+            f"""
+            INSERT INTO {User.__tablename__} (id, name, email, password_hash, is_active)
             VALUES (:id, :name, :email, :password_hash, :is_active)
             """
         ),
@@ -139,8 +139,8 @@ async def seed_households_and_users(session) -> None:
 
     await session.execute(
         text(
-            """
-            INSERT INTO household_members (user_id, household_id, role)
+            f"""
+            INSERT INTO {HouseholdMember.__tablename__} (user_id, household_id, role)
             VALUES (:user_id, :household_id, CAST(:role AS household_role_enum))
             """
         ),
@@ -179,8 +179,8 @@ async def seed_categories_and_budgets(session) -> None:
 
     await session.execute(
         text(
-            """
-            INSERT INTO categories (id, name, household_id)
+            f"""
+            INSERT INTO {Category.__tablename__} (id, name, household_id)
             VALUES (:id, :name, :household_id)
             """
         ),
@@ -189,8 +189,8 @@ async def seed_categories_and_budgets(session) -> None:
 
     await session.execute(
         text(
-            """
-            INSERT INTO budgets (id, goal, currency, category_id)
+            f"""
+            INSERT INTO {Budget.__tablename__} (id, goal, currency, category_id)
             VALUES (:id, :goal, CAST(:currency AS currency_type), :category_id)
             """
         ),
@@ -214,21 +214,18 @@ async def seed_transactions(session) -> None:
         is_expense = random.random() < EXPENSE_RATIO
         tx_type = "expense" if is_expense else "income"
 
-        # Amount bucket selection
         r = random.random()
         cumulative = 0.0
-        amount = 100_000  # fallback
+        amount = 100_000
         for prob, lo, hi in AMOUNT_BUCKETS:
             cumulative += prob
             if r <= cumulative:
                 amount = random.randint(lo, hi)
                 break
 
-        # Date: uniform in the last DATE_WINDOW_DAYS
         days_ago = random.randint(0, DATE_WINDOW_DAYS)
         tx_date = now - timedelta(days=days_ago)
 
-        # Category: expense gets a category from its own household; income gets NULL
         if is_expense:
             cat_index = random.randint(0, N_CATEGORIES_PER_HOUSEHOLD - 1)
             category_id = (
@@ -237,7 +234,6 @@ async def seed_transactions(session) -> None:
         else:
             category_id = None
 
-        # created_by: one of the two members of the household
         member_offset = random.randint(0, N_USERS_PER_HOUSEHOLD - 1)
         created_by = (household_id - 1) * N_USERS_PER_HOUSEHOLD + member_offset + 1
 
@@ -256,14 +252,13 @@ async def seed_transactions(session) -> None:
             }
         )
 
-    # Chunked insert to avoid one giant parameter list
     CHUNK = 5_000
     for i in range(0, len(rows), CHUNK):
         chunk = rows[i : i + CHUNK]
         await session.execute(
             text(
-                """
-                INSERT INTO transactions
+                f"""
+                INSERT INTO {Transaction.__tablename__}
                     (amount, type, currency, date, note,
                      category_id, household_id, created_by)
                 VALUES
@@ -280,9 +275,103 @@ async def seed_transactions(session) -> None:
     print(f"[seed] inserted {len(rows)} transactions")
 
 
-# ---------------------------------------------------------------------------
-# Analyze
-# ---------------------------------------------------------------------------
+async def seed_recurring_transactions(session) -> None:
+    now = datetime.now(UTC)
+    frequencies = ["daily"]
+    rows = []
+
+    for h in range(1, N_HOUSEHOLDS + 1):
+        for i in range(N_RECURRING_PER_HOUSEHOLD):
+            is_expense = random.random() < EXPENSE_RATIO
+            tx_type = "expense" if is_expense else "income"
+
+            if is_expense:
+                cat_index = random.randint(0, N_CATEGORIES_PER_HOUSEHOLD - 1)
+                category_id = (h - 1) * N_CATEGORIES_PER_HOUSEHOLD + cat_index + 1
+            else:
+                category_id = None
+
+            member_offset = random.randint(0, N_USERS_PER_HOUSEHOLD - 1)
+            created_by = (h - 1) * N_USERS_PER_HOUSEHOLD + member_offset + 1
+
+            days_offset = random.randint(-15, 45)
+            next_run = now + timedelta(days=days_offset)
+
+            rows.append(
+                RecurringTransaction(
+                    household_id=h,
+                    created_by=created_by,
+                    amount=random.randint(50_000, 2_000_000),
+                    type=tx_type,
+                    currency="TOMAN",
+                    note=f"Recurring item {h}-{i}",
+                    category_id=category_id,
+                    frequency=random.choice(frequencies),
+                    next_run_date=next_run,
+                    is_active=random.random() > 0.15,
+                )
+            )
+
+    session.add_all(rows)
+    await session.commit()
+    print(f"[seed] inserted {len(rows)} recurring transaction templates")
+
+
+async def seed_report_jobs(session) -> None:
+    now = datetime.now(UTC)
+    statuses = [JobStatus.COMPLETED, JobStatus.PENDING, JobStatus.FAILED]
+    rows = []
+
+    for h in range(1, N_HOUSEHOLDS + 1):
+        for i in range(N_REPORTS_PER_HOUSEHOLD):
+            st = random.choices(statuses, weights=[0.75, 0.15, 0.10])[0]
+            member_offset = random.randint(0, N_USERS_PER_HOUSEHOLD - 1)
+            requested_by = (h - 1) * N_USERS_PER_HOUSEHOLD + member_offset + 1
+
+            start_days = random.randint(60, 365)
+            end_days = random.randint(0, 30)
+            start_date = (now - timedelta(days=start_days)).date().isoformat()
+            end_date = (now - timedelta(days=end_days)).date().isoformat()
+
+            filters: dict[str, Any] = {
+                "start_date": start_date,
+                "end_date": end_date,
+            }
+            if random.random() < 0.6:
+                filters["type"] = "expense" if random.random() < 0.8 else "income"
+            if random.random() < 0.4:
+                cat_index = random.randint(0, N_CATEGORIES_PER_HOUSEHOLD - 1)
+                filters["category_id"] = (
+                    (h - 1) * N_CATEGORIES_PER_HOUSEHOLD + cat_index + 1
+                )
+
+            file_path = (
+                f"/tmp/reports/report_hh{h}_job{i}.csv"
+                if st == JobStatus.COMPLETED
+                else None
+            )
+            err_msg = "Worker timeout during export" if st == JobStatus.FAILED else None
+            completed_at = (
+                now - timedelta(minutes=random.randint(5, 1440))
+                if st in (JobStatus.COMPLETED, JobStatus.FAILED)
+                else None
+            )
+
+            rows.append(
+                ReportJob(
+                    household_id=h,
+                    requested_by=requested_by,
+                    status=st,
+                    filters=filters,
+                    file_path=file_path,
+                    error_message=err_msg,
+                    completed_at=completed_at,
+                )
+            )
+
+    session.add_all(rows)
+    await session.commit()
+    print(f"[seed] inserted {len(rows)} report jobs")
 
 
 async def analyze_all(session) -> None:
@@ -291,29 +380,21 @@ async def analyze_all(session) -> None:
     print("[seed] ran ANALYZE on all tables")
 
 
-# ---------------------------------------------------------------------------
-# Summary
-# ---------------------------------------------------------------------------
-
-
 async def print_summary(session) -> None:
     tables = [
-        "household",
-        "users",
-        "household_members",
-        "categories",
-        "budgets",
-        "transactions",
+        Household.__tablename__,
+        User.__tablename__,
+        HouseholdMember.__tablename__,
+        Category.__tablename__,
+        Budget.__tablename__,
+        Transaction.__tablename__,
+        RecurringTransaction.__tablename__,
+        ReportJob.__tablename__,
     ]
     print("\n[seed] row counts:")
     for tbl in tables:
         count = await session.scalar(text(f"SELECT COUNT(*) FROM {tbl}"))
-        print(f"  {tbl:<20} {count:>8}")
-
-
-# ---------------------------------------------------------------------------
-# Entrypoint
-# ---------------------------------------------------------------------------
+        print(f"  {tbl:<25} {count:>8}")
 
 
 async def main() -> None:
@@ -324,6 +405,8 @@ async def main() -> None:
         await seed_households_and_users(session)
         await seed_categories_and_budgets(session)
         await seed_transactions(session)
+        await seed_recurring_transactions(session)
+        await seed_report_jobs(session)
         await analyze_all(session)
         await print_summary(session)
 
