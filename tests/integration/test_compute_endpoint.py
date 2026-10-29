@@ -131,12 +131,12 @@ async def compute_test_env(db_session: AsyncSession) -> dict:
 class TestComputeEndpoints:
     async def test_get_summary_happy_path(
         self,
-        async_client: AsyncClient,
+        async_client_with_redis: AsyncClient,
         compute_test_env: dict,
     ) -> None:
         headers = {"Authorization": f"Bearer {compute_test_env['token']}"}
 
-        response = await async_client.get(
+        response = await async_client_with_redis.get(
             f"/api/v1/households/{compute_test_env['household_id']}/compute/summary",
             headers=headers,
         )
@@ -150,12 +150,12 @@ class TestComputeEndpoints:
 
     async def test_get_summary_empty_household_zero_state(
         self,
-        async_client: AsyncClient,
+        async_client_with_redis: AsyncClient,
         compute_test_env: dict,
     ) -> None:
         headers = {"Authorization": f"Bearer {compute_test_env['token']}"}
 
-        response = await async_client.get(
+        response = await async_client_with_redis.get(
             f"/api/v1/households/{compute_test_env['empty_household_id']}/compute/summary",
             headers=headers,
         )
@@ -169,12 +169,12 @@ class TestComputeEndpoints:
 
     async def test_get_category_balance_utilized(
         self,
-        async_client: AsyncClient,
+        async_client_with_redis: AsyncClient,
         compute_test_env: dict,
     ) -> None:
         headers = {"Authorization": f"Bearer {compute_test_env['token']}"}
 
-        response = await async_client.get(
+        response = await async_client_with_redis.get(
             f"/api/v1/households/{compute_test_env['household_id']}/compute/{compute_test_env['food_cat_id']}",
             headers=headers,
         )
@@ -188,12 +188,12 @@ class TestComputeEndpoints:
 
     async def test_get_category_balance_unused_zero_expenses(
         self,
-        async_client: AsyncClient,
+        async_client_with_redis: AsyncClient,
         compute_test_env: dict,
     ) -> None:
         headers = {"Authorization": f"Bearer {compute_test_env['token']}"}
 
-        response = await async_client.get(
+        response = await async_client_with_redis.get(
             f"/api/v1/households/{compute_test_env['household_id']}/compute/{compute_test_env['rent_cat_id']}",
             headers=headers,
         )
@@ -207,12 +207,12 @@ class TestComputeEndpoints:
 
     async def test_get_category_balance_over_budget_negative_remaining(
         self,
-        async_client: AsyncClient,
+        async_client_with_redis: AsyncClient,
         compute_test_env: dict,
     ) -> None:
         headers = {"Authorization": f"Bearer {compute_test_env['token']}"}
 
-        response = await async_client.get(
+        response = await async_client_with_redis.get(
             f"/api/v1/households/{compute_test_env['household_id']}/compute/{compute_test_env['entertainment_cat_id']}",
             headers=headers,
         )
@@ -226,12 +226,12 @@ class TestComputeEndpoints:
 
     async def test_get_category_balance_not_found(
         self,
-        async_client: AsyncClient,
+        async_client_with_redis: AsyncClient,
         compute_test_env: dict,
     ) -> None:
         headers = {"Authorization": f"Bearer {compute_test_env['token']}"}
 
-        response = await async_client.get(
+        response = await async_client_with_redis.get(
             f"/api/v1/households/{compute_test_env['household_id']}/compute/999999",
             headers=headers,
         )
@@ -244,12 +244,12 @@ class TestComputeEndpoints:
 
     async def test_get_all_categories_balance_happy_path(
         self,
-        async_client: AsyncClient,
+        async_client_with_redis: AsyncClient,
         compute_test_env: dict,
     ) -> None:
         headers = {"Authorization": f"Bearer {compute_test_env['token']}"}
 
-        response = await async_client.get(
+        response = await async_client_with_redis.get(
             f"/api/v1/households/{compute_test_env['household_id']}/compute/categories",
             headers=headers,
         )
@@ -269,12 +269,12 @@ class TestComputeEndpoints:
 
     async def test_get_all_categories_balance_empty_household(
         self,
-        async_client: AsyncClient,
+        async_client_with_redis: AsyncClient,
         compute_test_env: dict,
     ) -> None:
         headers = {"Authorization": f"Bearer {compute_test_env['token']}"}
 
-        response = await async_client.get(
+        response = await async_client_with_redis.get(
             f"/api/v1/households/{compute_test_env['empty_household_id']}/compute/categories",
             headers=headers,
         )
@@ -287,13 +287,13 @@ class TestComputeEndpoints:
     @pytest.mark.parametrize("invalid_household_id", [0, -5])
     async def test_compute_path_household_id_validation_error(
         self,
-        async_client: AsyncClient,
+        async_client_with_redis: AsyncClient,
         compute_test_env: dict,
         invalid_household_id: int,
     ) -> None:
         headers = {"Authorization": f"Bearer {compute_test_env['token']}"}
 
-        response = await async_client.get(
+        response = await async_client_with_redis.get(
             f"/api/v1/households/{invalid_household_id}/compute/summary",
             headers=headers,
         )
@@ -307,13 +307,13 @@ class TestComputeEndpoints:
     @pytest.mark.parametrize("invalid_category_id", [0, -1])
     async def test_compute_path_category_id_validation_error(
         self,
-        async_client: AsyncClient,
+        async_client_with_redis: AsyncClient,
         compute_test_env: dict,
         invalid_category_id: int,
     ) -> None:
         headers = {"Authorization": f"Bearer {compute_test_env['token']}"}
 
-        response = await async_client.get(
+        response = await async_client_with_redis.get(
             f"/api/v1/households/{compute_test_env['household_id']}/compute/{invalid_category_id}",
             headers=headers,
         )
@@ -325,10 +325,10 @@ class TestComputeEndpoints:
 
     async def test_compute_unauthorized_missing_token(
         self,
-        async_client: AsyncClient,
+        async_client_with_redis: AsyncClient,
         compute_test_env: dict,
     ) -> None:
-        response = await async_client.get(
+        response = await async_client_with_redis.get(
             f"/api/v1/households/{compute_test_env['household_id']}/compute/summary"
         )
 

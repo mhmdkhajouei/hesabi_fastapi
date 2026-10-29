@@ -90,8 +90,9 @@ def get_report_service(
 
 def get_recurring_transaction_service(
     uow: Annotated[UnitOfWork, Depends(get_uow)],
+    redis: RedisClient,
 ) -> RecurringTransactionService:
-    return RecurringTransactionService(uow)
+    return RecurringTransactionService(uow, redis)
 
 
 class DeprecateRoute:

@@ -97,14 +97,14 @@ async def existing_category(
 class TestCategoryEndpoints:
     async def test_create_category_happy_path(
         self,
-        async_client: AsyncClient,
+        async_client_with_redis: AsyncClient,
         db_session: AsyncSession,
         category_test_env: dict,
     ) -> None:
         headers = {"Authorization": f"Bearer {category_test_env['owner_token']}"}
         payload = {"name": "Healthcare", "budget_goal": 3000000}
 
-        response = await async_client.post(
+        response = await async_client_with_redis.post(
             f"/api/v1/households/{category_test_env['household_id']}/categories/",
             json=payload,
             headers=headers,
@@ -131,14 +131,14 @@ class TestCategoryEndpoints:
 
     async def test_create_category_name_strip_whitespace(
         self,
-        async_client: AsyncClient,
+        async_client_with_redis: AsyncClient,
         db_session: AsyncSession,
         category_test_env: dict,
     ) -> None:
         headers = {"Authorization": f"Bearer {category_test_env['owner_token']}"}
         payload = {"name": "   Education   ", "budget_goal": 1500000}
 
-        response = await async_client.post(
+        response = await async_client_with_redis.post(
             f"/api/v1/households/{category_test_env['household_id']}/categories/",
             json=payload,
             headers=headers,
@@ -162,7 +162,7 @@ class TestCategoryEndpoints:
     )
     async def test_create_category_boundary_values(
         self,
-        async_client: AsyncClient,
+        async_client_with_redis: AsyncClient,
         category_test_env: dict,
         name: str,
         goal: int,
@@ -170,7 +170,7 @@ class TestCategoryEndpoints:
         headers = {"Authorization": f"Bearer {category_test_env['owner_token']}"}
         payload = {"name": name, "budget_goal": goal}
 
-        response = await async_client.post(
+        response = await async_client_with_redis.post(
             f"/api/v1/households/{category_test_env['household_id']}/categories/",
             json=payload,
             headers=headers,
@@ -187,14 +187,14 @@ class TestCategoryEndpoints:
     )
     async def test_create_category_non_owner_forbidden(
         self,
-        async_client: AsyncClient,
+        async_client_with_redis: AsyncClient,
         category_test_env: dict,
         role_key: str,
     ) -> None:
         headers = {"Authorization": f"Bearer {category_test_env[role_key]}"}
         payload = {"name": "Travel", "budget_goal": 2000000}
 
-        response = await async_client.post(
+        response = await async_client_with_redis.post(
             f"/api/v1/households/{category_test_env['household_id']}/categories/",
             json=payload,
             headers=headers,
@@ -207,12 +207,12 @@ class TestCategoryEndpoints:
 
     async def test_create_category_unauthorized(
         self,
-        async_client: AsyncClient,
+        async_client_with_redis: AsyncClient,
         category_test_env: dict,
     ) -> None:
         payload = {"name": "Travel", "budget_goal": 2000000}
 
-        response = await async_client.post(
+        response = await async_client_with_redis.post(
             f"/api/v1/households/{category_test_env['household_id']}/categories/",
             json=payload,
         )
@@ -234,13 +234,13 @@ class TestCategoryEndpoints:
     )
     async def test_create_category_payload_validation_errors(
         self,
-        async_client: AsyncClient,
+        async_client_with_redis: AsyncClient,
         category_test_env: dict,
         invalid_payload: dict,
     ) -> None:
         headers = {"Authorization": f"Bearer {category_test_env['owner_token']}"}
 
-        response = await async_client.post(
+        response = await async_client_with_redis.post(
             f"/api/v1/households/{category_test_env['household_id']}/categories/",
             json=invalid_payload,
             headers=headers,
@@ -257,14 +257,14 @@ class TestCategoryEndpoints:
     @pytest.mark.parametrize("invalid_household_id", [0, -1])
     async def test_create_category_invalid_path_parameter(
         self,
-        async_client: AsyncClient,
+        async_client_with_redis: AsyncClient,
         category_test_env: dict,
         invalid_household_id: int,
     ) -> None:
         headers = {"Authorization": f"Bearer {category_test_env['owner_token']}"}
         payload = {"name": "Valid", "budget_goal": 500000}
 
-        response = await async_client.post(
+        response = await async_client_with_redis.post(
             f"/api/v1/households/{invalid_household_id}/categories/",
             json=payload,
             headers=headers,
@@ -277,13 +277,13 @@ class TestCategoryEndpoints:
 
     async def test_get_category_by_id_happy_path(
         self,
-        async_client: AsyncClient,
+        async_client_with_redis: AsyncClient,
         category_test_env: dict,
         existing_category: Category,
     ) -> None:
         headers = {"Authorization": f"Bearer {category_test_env['viewer_token']}"}
 
-        response = await async_client.get(
+        response = await async_client_with_redis.get(
             f"/api/v1/households/{category_test_env['household_id']}/categories/{existing_category.id}",
             headers=headers,
         )
@@ -296,12 +296,12 @@ class TestCategoryEndpoints:
 
     async def test_get_category_not_found(
         self,
-        async_client: AsyncClient,
+        async_client_with_redis: AsyncClient,
         category_test_env: dict,
     ) -> None:
         headers = {"Authorization": f"Bearer {category_test_env['owner_token']}"}
 
-        response = await async_client.get(
+        response = await async_client_with_redis.get(
             f"/api/v1/households/{category_test_env['household_id']}/categories/999999",
             headers=headers,
         )
@@ -314,13 +314,13 @@ class TestCategoryEndpoints:
 
     async def test_get_category_cross_household_bola_protection(
         self,
-        async_client: AsyncClient,
+        async_client_with_redis: AsyncClient,
         category_test_env: dict,
         existing_category: Category,
     ) -> None:
         headers = {"Authorization": f"Bearer {category_test_env['owner_token']}"}
 
-        response = await async_client.get(
+        response = await async_client_with_redis.get(
             f"/api/v1/households/{category_test_env['foreign_household_id']}/categories/{existing_category.id}",
             headers=headers,
         )
@@ -332,13 +332,13 @@ class TestCategoryEndpoints:
 
     async def test_get_all_categories_happy_path(
         self,
-        async_client: AsyncClient,
+        async_client_with_redis: AsyncClient,
         category_test_env: dict,
         existing_category: Category,
     ) -> None:
         headers = {"Authorization": f"Bearer {category_test_env['member_token']}"}
 
-        response = await async_client.get(
+        response = await async_client_with_redis.get(
             f"/api/v1/households/{category_test_env['household_id']}/categories/",
             headers=headers,
         )
@@ -351,14 +351,14 @@ class TestCategoryEndpoints:
 
     async def test_patch_category_partial_fields(
         self,
-        async_client: AsyncClient,
+        async_client_with_redis: AsyncClient,
         db_session: AsyncSession,
         category_test_env: dict,
         existing_category: Category,
     ) -> None:
         headers = {"Authorization": f"Bearer {category_test_env['owner_token']}"}
 
-        response_name = await async_client.patch(
+        response_name = await async_client_with_redis.patch(
             f"/api/v1/households/{category_test_env['household_id']}/categories/{existing_category.id}",
             json={"name": "Supermarket"},
             headers=headers,
@@ -367,7 +367,7 @@ class TestCategoryEndpoints:
         assert response_name.json()["name"] == "Supermarket"
         assert response_name.json()["budget_goal"] == existing_category.budget_goal
 
-        response_goal = await async_client.patch(
+        response_goal = await async_client_with_redis.patch(
             f"/api/v1/households/{category_test_env['household_id']}/categories/{existing_category.id}",
             json={"budget_goal": 8000000},
             headers=headers,
@@ -384,13 +384,13 @@ class TestCategoryEndpoints:
 
     async def test_patch_category_empty_payload_noop(
         self,
-        async_client: AsyncClient,
+        async_client_with_redis: AsyncClient,
         category_test_env: dict,
         existing_category: Category,
     ) -> None:
         headers = {"Authorization": f"Bearer {category_test_env['owner_token']}"}
 
-        response = await async_client.patch(
+        response = await async_client_with_redis.patch(
             f"/api/v1/households/{category_test_env['household_id']}/categories/{existing_category.id}",
             json={},
             headers=headers,
@@ -403,12 +403,12 @@ class TestCategoryEndpoints:
 
     async def test_patch_category_not_found(
         self,
-        async_client: AsyncClient,
+        async_client_with_redis: AsyncClient,
         category_test_env: dict,
     ) -> None:
         headers = {"Authorization": f"Bearer {category_test_env['owner_token']}"}
 
-        response = await async_client.patch(
+        response = await async_client_with_redis.patch(
             f"/api/v1/households/{category_test_env['household_id']}/categories/999999",
             json={"name": "New"},
             headers=headers,
@@ -421,14 +421,14 @@ class TestCategoryEndpoints:
 
     async def test_delete_category_happy_path(
         self,
-        async_client: AsyncClient,
+        async_client_with_redis: AsyncClient,
         db_session: AsyncSession,
         category_test_env: dict,
         existing_category: Category,
     ) -> None:
         headers = {"Authorization": f"Bearer {category_test_env['owner_token']}"}
 
-        response = await async_client.delete(
+        response = await async_client_with_redis.delete(
             f"/api/v1/households/{category_test_env['household_id']}/categories/{existing_category.id}",
             headers=headers,
         )
@@ -442,12 +442,12 @@ class TestCategoryEndpoints:
 
     async def test_delete_category_not_found(
         self,
-        async_client: AsyncClient,
+        async_client_with_redis: AsyncClient,
         category_test_env: dict,
     ) -> None:
         headers = {"Authorization": f"Bearer {category_test_env['owner_token']}"}
 
-        response = await async_client.delete(
+        response = await async_client_with_redis.delete(
             f"/api/v1/households/{category_test_env['household_id']}/categories/999999",
             headers=headers,
         )
@@ -460,13 +460,13 @@ class TestCategoryEndpoints:
 
     async def test_delete_category_non_owner_forbidden(
         self,
-        async_client: AsyncClient,
+        async_client_with_redis: AsyncClient,
         category_test_env: dict,
         existing_category: Category,
     ) -> None:
         headers = {"Authorization": f"Bearer {category_test_env['member_token']}"}
 
-        response = await async_client.delete(
+        response = await async_client_with_redis.delete(
             f"/api/v1/households/{category_test_env['household_id']}/categories/{existing_category.id}",
             headers=headers,
         )

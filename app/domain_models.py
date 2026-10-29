@@ -131,13 +131,23 @@ class ReportFiltersDomain:
             )
 
     def to_dict(self) -> dict:
-        return {k: v for k, v in asdict(self).items() if v is not None}
+        data = {k: v for k, v in asdict(self).items() if v is not None}
+        if self.start_date:
+            data["start_date"] = self.start_date.isoformat()
+        if self.end_date:
+            data["end_date"] = self.end_date.isoformat()
+        return data
 
     @classmethod
     def from_dict(cls, data: dict | None) -> "ReportFiltersDomain | None":
         if not data:
             return None
-        return cls(**data)
+        parsed = dict(data)
+        if "start_date" in parsed and isinstance(parsed["start_date"], str):
+            parsed["start_date"] = date.fromisoformat(parsed["start_date"])
+        if "end_date" in parsed and isinstance(parsed["end_date"], str):
+            parsed["end_date"] = date.fromisoformat(parsed["end_date"])
+        return cls(**parsed)
 
 
 @dataclass

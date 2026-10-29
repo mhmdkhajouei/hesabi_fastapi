@@ -50,6 +50,6 @@ v1_router.include_router(
 
 v1_router.include_router(
     recurring_transaction_route,
-    prefix="/households/{houshold_id}/recurring_transaction",
+    prefix="/households/{household_id}/recurring_transaction",
     tags=["Recurring Transaction"],
 )

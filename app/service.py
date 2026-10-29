@@ -6,6 +6,7 @@ from pathlib import Path
 import aiofiles
 from redis.asyncio import Redis
 
+from app.broker import enqueue_recurring_transaction
 from app.cache import (
     categories_key,
     category_key,
@@ -220,11 +221,7 @@ class TransactionService:
         await invalidate_compute_cache(self.redis, household_id, [tx.category_id])
 
         if template_id is not None:
-            from app.worker import process_recurring_template_actor
-
-            process_recurring_template_actor.send_with_options(
-                args=(template_id,), delay=int(delay_seconds * 1000)
-            )
+            enqueue_recurring_transaction(template_id, delay_seconds)
 
         return response
 
@@ -659,12 +656,14 @@ class ReportJobsService:
                 await self.uow.reports.update_job_status(
                     job_id, JobStatus.FAILED, error_message=str(e)
                 )
+                await self.uow.session.commit()
                 raise
 
 
 class RecurringTransactionService:
-    def __init__(self, uow: UnitOfWork):
+    def __init__(self, uow: UnitOfWork, redis: Redis):
         self.uow = uow
+        self.redis = redis
 
     async def get_all_templates(
         self, household_id: int
@@ -800,10 +799,12 @@ class RecurringTransactionService:
             await self.uow.recurring_transactions.update_next_run_date(
                 template, next_date
             )
-        if next_date is not None:
-            from app.worker import process_recurring_template_actor
 
-            delay_seconds = (next_date - datetime.now(UTC)).total_seconds()
-            process_recurring_template_actor.send_with_options(
-                args=(template.id,), delay=int(delay_seconds * 1000)
+        if tx_domain.household_id is not None:
+            await invalidate_compute_cache(
+                self.redis, tx_domain.household_id, [tx_domain.category_id]
             )
+
+        if next_date is not None:
+            delay_seconds = max(0.0, (next_date - datetime.now(UTC)).total_seconds())
+            enqueue_recurring_transaction(template_id, delay_seconds)

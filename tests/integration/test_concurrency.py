@@ -13,13 +13,13 @@ from app.db.database import (
     HouseholdRole,
     User,
 )
-from app.dependencies import get_session
+from app.dependencies import get_redis_client, get_session
 from app.main import app
 from app.security import create_access_token, hash_password
 
 
 @pytest.mark.asyncio
-async def test_concurrent_transactions_do_not_exceed_budget(test_engine):
+async def test_concurrent_transactions_do_not_exceed_budget(test_engine, fake_redis):
     test_session_factory = async_sessionmaker(test_engine, expire_on_commit=False)
 
     async def _override_get_session():
@@ -32,6 +32,7 @@ async def test_concurrent_transactions_do_not_exceed_budget(test_engine):
                 raise
 
     app.dependency_overrides[get_session] = _override_get_session
+    app.dependency_overrides[get_redis_client] = lambda: fake_redis
 
     try:
         async with test_session_factory() as session:
