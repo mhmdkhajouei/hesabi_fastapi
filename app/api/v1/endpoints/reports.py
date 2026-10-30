@@ -1,6 +1,7 @@
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Path, status
+from fastapi.responses import FileResponse
 
 from app.dependencies import CurrentUser, RequireRole, get_report_service
 from app.schemas import ReportExportRequest, ReportJobResponse
@@ -49,4 +50,29 @@ async def get_report_status(
         household_id=household_id,
         job_id=job_id,
         user_id=current_user.id,
+    )
+
+
+@router.get(
+    "/{job_id}/download",
+    summary="Download report file",
+    description="Downlaod the generated CSV report file. Only the requester can download",
+    status_code=status.HTTP_200_OK,
+    response_class=FileResponse,
+)
+async def downaload_report(
+    household_id: Annotated[int, Path(gt=0)],
+    job_id: Annotated[int, Path(gt=0)],
+    current_user: CurrentUser,
+    service: Annotated[ReportJobResponse, Depends(get_report_service)],
+):
+    file_path = await service.get_report_file_path(
+        household_id=household_id,
+        job_id=job_id,
+        user_id=current_user.id,
+    )
+    return FileResponse(
+        path=file_path,
+        filename=f"report_{job_id}.csv",
+        media_type="text/csv",
     )

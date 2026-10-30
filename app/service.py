@@ -607,6 +607,32 @@ class ReportJobsService:
 
             return ReportJobResponse.model_validate(job)
 
+    async def get_report_file_path(
+        self, household_id: int, job_id: int, user_id: int
+    ) -> Path:
+        async with self.uow:
+            job = await self.get_job_status(household_id, job_id, user_id)
+
+            if job.status != JobStatus.COMPLETED or not job.file_path:
+                raise BusinessRuleError(
+                    message="Report is not ready for download yet.",
+                    error_code="REPORT_NOT_READY",
+                )
+            base_dir = Path("data/reports").resolve()
+            file_path = Path(job.file_path).resolve()
+
+            if not file_path.is_relative_to(base_dir):
+                raise BusinessRuleError(
+                    message="Invalid report file path.",
+                    error_code="INVALID_FILE_PATH",
+                )
+            if not file_path.exists():
+                raise NotFoundError(
+                    message="Report file not found on disk",
+                    error_code="REPORT_FILE_MISSING",
+                )
+            return file_path
+
     async def process_report(self, job_id: int) -> None:
         async with self.uow:
             job = await self.uow.reports.get_report_job_by_id(job_id=job_id)
