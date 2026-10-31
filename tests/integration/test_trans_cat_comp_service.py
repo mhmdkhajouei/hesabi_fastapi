@@ -1,5 +1,6 @@
 import asyncio
 
+import fakeredis.aioredis
 import pytest
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
@@ -29,9 +30,9 @@ from app.schemas import (
 
 
 @pytest.fixture
-def category_service(db_session):
+def category_service(db_session, fake_redis: fakeredis.aioredis.FakeRedis):
     uow = get_uow(db_session)
-    return get_category_service(uow)
+    return get_category_service(uow, fake_redis)
 
 
 @pytest.fixture
@@ -93,7 +94,6 @@ class TestCategoryService:
         assert response.name == "Clothes"
 
     async def test_edit_category_not_found(self, category_service, seed_category):
-
         payload = CategoryUpdate(name="Clothes")
         with pytest.raises(NotFoundError) as exc_info:
             await category_service.edit_category(
@@ -114,7 +114,6 @@ class TestCategoryService:
     async def test_delete_category_not_found(
         self, category_service, seed_category, seed_household
     ):
-
         with pytest.raises(NotFoundError) as exc_info:
             await category_service.delete_category(
                 seed_household.id,
@@ -144,7 +143,6 @@ class TestCategoryService:
     async def test_get_all_categories_success(
         self, category_service, seed_household, db_session
     ):
-
         cat_1 = Category(
             household_id=seed_household.id, name="Food", budget=Budget(goal=5000)
         )
@@ -165,17 +163,10 @@ class TestCategoryService:
         assert cat_2.id in category_ids
 
 
-"""
-----------------------------------
-Transactions 
-----------------------------------
-"""
-
-
 @pytest.fixture
-def transaction_service(db_session):
+def transaction_service(db_session, fake_redis: fakeredis.aioredis.FakeRedis):
     uow = get_uow(db_session)
-    return get_transaction_service(uow)
+    return get_transaction_service(uow, fake_redis)
 
 
 DUMMY_SECURE_HASH = "$2b$12$e86gOzU4mO8hE7gYQx3x8.0yY2B5V3d3gS4v2X6M0F2k6P1q9e7W2"
@@ -251,6 +242,7 @@ class TestTransactionService:
             household_id=seed_household.id,
             user_id=seed_user.id,
             data=payload,
+            user_role=HouseholdRole.OWNER,
         )
 
         assert response.id is not None
@@ -272,6 +264,7 @@ class TestTransactionService:
             household_id=seed_household.id,
             user_id=seed_user.id,
             data=payload,
+            user_role=HouseholdRole.OWNER,
         )
 
         assert response.id is not None
@@ -293,6 +286,7 @@ class TestTransactionService:
                 household_id=seed_household.id,
                 user_id=seed_user.id,
                 data=payload,
+                user_role=HouseholdRole.MEMBER,
             )
 
         assert exc_info.value.error_code == "CATEGORY_NOT_FOUND"
@@ -309,6 +303,7 @@ class TestTransactionService:
             household_id=seed_household.id,
             user_id=seed_user.id,
             data=payload,
+            user_role=HouseholdRole.MEMBER,
         )
         assert response.amount == 1000000
 
@@ -325,6 +320,7 @@ class TestTransactionService:
                 household_id=seed_household.id,
                 user_id=seed_user.id,
                 data=payload,
+                user_role=HouseholdRole.MEMBER,
             )
         assert exc_info.value.error_code == "BUDGET_LIMIT_EXCEEDED"
 
@@ -548,7 +544,7 @@ class TestTransactionService:
         assert tx_2.id in tx_ids
 
     async def test_concurrent_transaction_pessimistic_lock_two_users(
-        self, test_engine: AsyncEngine
+        self, test_engine: AsyncEngine, fake_redis: fakeredis.aioredis.FakeRedis
     ):
         try:
             session_factory = async_sessionmaker(test_engine, expire_on_commit=False)
@@ -588,7 +584,7 @@ class TestTransactionService:
                     async with session_factory() as session:
                         uow = get_uow(session)
                         async with uow:
-                            service = get_transaction_service(uow)
+                            service = get_transaction_service(uow, fake_redis)
                             payload = TransactionCreate(
                                 amount=500_000, type="expense", category_id=category_id
                             )
@@ -596,6 +592,7 @@ class TestTransactionService:
                                 household_id=household_id,
                                 user_id=caller_user_id,
                                 data=payload,
+                                user_role=HouseholdRole.MEMBER,
                             )
 
                 results = await asyncio.gather(
@@ -630,7 +627,7 @@ class TestTransactionService:
                 )
 
     async def test_concurrent_transaction_overbudget_pessimistic_lock_two_users(
-        self, test_engine: AsyncEngine
+        self, test_engine: AsyncEngine, fake_redis: fakeredis.aioredis.FakeRedis
     ):
         try:
             session_factory = async_sessionmaker(test_engine, expire_on_commit=False)
@@ -670,7 +667,7 @@ class TestTransactionService:
                     async with session_factory() as session:
                         uow = get_uow(session)
                         async with uow:
-                            service = get_transaction_service(uow)
+                            service = get_transaction_service(uow, fake_redis)
                             payload = TransactionCreate(
                                 amount=600_000, type="expense", category_id=category_id
                             )
@@ -678,6 +675,7 @@ class TestTransactionService:
                                 household_id=household_id,
                                 user_id=caller_user_id,
                                 data=payload,
+                                user_role=HouseholdRole.MEMBER,
                             )
 
                 results = await asyncio.gather(
@@ -711,17 +709,10 @@ class TestTransactionService:
                 )
 
 
-"""
---------------------------------
-Compute
---------------------------------
-"""
-
-
 @pytest.fixture
-def compute_service(db_session):
+def compute_service(db_session, fake_redis: fakeredis.aioredis.FakeRedis):
     uow = get_uow(db_session)
-    return get_compute_service(uow)
+    return get_compute_service(uow, fake_redis)
 
 
 class TestComputeService:

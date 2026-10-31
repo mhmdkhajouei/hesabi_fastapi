@@ -53,7 +53,7 @@ async def create_transaction(
     data: TransactionCreate,
     service: Annotated[TransactionService, Depends(get_transaction_service)],
 ) -> TransactionResponse:
-    return await service.add_transaction(household_id, auth.user_id, data)
+    return await service.add_transaction(household_id, auth.user_id, data, auth.role)
 
 
 @router.patch(

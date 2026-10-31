@@ -4,6 +4,7 @@ from typing import NamedTuple
 
 from fastapi import Depends, Path, Response
 from fastapi.security import OAuth2PasswordBearer
+from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.util.typing import Annotated
 
@@ -14,6 +15,7 @@ from app.db.crud import (
     UserRepo,
 )
 from app.db.database import HouseholdRole, User, async_db_session
+from app.db.redis import get_redis
 from app.db.uow import UnitOfWork
 from app.errors.exceptions import AuthenticationError, ForbiddenError, NotFoundError
 from app.security import decode_token
@@ -22,6 +24,8 @@ from app.service import (
     CategoryService,
     ComputeService,
     HouseholdService,
+    RecurringTransactionService,
+    ReportJobsService,
     TransactionService,
     UserService,
 )
@@ -38,6 +42,13 @@ def get_uow(
     return UnitOfWork(session)
 
 
+def get_redis_client() -> Redis:
+    return get_redis()
+
+
+RedisClient = Annotated[Redis, Depends(get_redis_client)]
+
+
 def get_category_repo(
     session: Annotated[AsyncSession, Depends(get_session)],
 ) -> CategoryRepo:
@@ -46,14 +57,16 @@ def get_category_repo(
 
 def get_category_service(
     uow: Annotated[UnitOfWork, Depends(get_uow)],
+    redis: RedisClient,
 ) -> CategoryService:
-    return CategoryService(uow)
+    return CategoryService(uow, redis)
 
 
 def get_transaction_service(
     uow: Annotated[UnitOfWork, Depends(get_uow)],
+    redis: RedisClient,
 ) -> TransactionService:
-    return TransactionService(uow)
+    return TransactionService(uow, redis)
 
 
 def get_compute_repo(
@@ -64,8 +77,22 @@ def get_compute_repo(
 
 def get_compute_service(
     uow: Annotated[UnitOfWork, Depends(get_uow)],
+    redis: RedisClient,
 ) -> ComputeService:
-    return ComputeService(uow)
+    return ComputeService(uow, redis)
+
+
+def get_report_service(
+    uow: Annotated[UnitOfWork, Depends(get_uow)],
+) -> ReportJobsService:
+    return ReportJobsService(uow)
+
+
+def get_recurring_transaction_service(
+    uow: Annotated[UnitOfWork, Depends(get_uow)],
+    redis: RedisClient,
+) -> RecurringTransactionService:
+    return RecurringTransactionService(uow, redis)
 
 
 class DeprecateRoute:

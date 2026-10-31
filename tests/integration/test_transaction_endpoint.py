@@ -134,7 +134,7 @@ async def alice_transaction(
 class TestTransactionEndpoints:
     async def test_create_expense_transaction_happy_path(
         self,
-        async_client: AsyncClient,
+        async_client_with_redis: AsyncClient,
         db_session: AsyncSession,
         transaction_test_env: dict,
     ) -> None:
@@ -147,7 +147,7 @@ class TestTransactionEndpoints:
             "date": "2026-09-01T10:00:00Z",
         }
 
-        response = await async_client.post(
+        response = await async_client_with_redis.post(
             f"/api/v1/households/{transaction_test_env['household_id']}/transactions/",
             json=payload,
             headers=headers,
@@ -171,7 +171,7 @@ class TestTransactionEndpoints:
 
     async def test_create_income_transaction_without_category(
         self,
-        async_client: AsyncClient,
+        async_client_with_redis: AsyncClient,
         db_session: AsyncSession,
         transaction_test_env: dict,
     ) -> None:
@@ -182,7 +182,7 @@ class TestTransactionEndpoints:
             "note": "Monthly Salary",
         }
 
-        response = await async_client.post(
+        response = await async_client_with_redis.post(
             f"/api/v1/households/{transaction_test_env['household_id']}/transactions/",
             json=payload,
             headers=headers,
@@ -201,7 +201,7 @@ class TestTransactionEndpoints:
 
     async def test_create_transaction_amount_boundary(
         self,
-        async_client: AsyncClient,
+        async_client_with_redis: AsyncClient,
         transaction_test_env: dict,
     ) -> None:
         headers = {"Authorization": f"Bearer {transaction_test_env['alice_token']}"}
@@ -211,7 +211,7 @@ class TestTransactionEndpoints:
             "category_id": transaction_test_env["category_id"],
         }
 
-        response = await async_client.post(
+        response = await async_client_with_redis.post(
             f"/api/v1/households/{transaction_test_env['household_id']}/transactions/",
             json=payload,
             headers=headers,
@@ -222,7 +222,7 @@ class TestTransactionEndpoints:
 
     async def test_create_transaction_note_boundary(
         self,
-        async_client: AsyncClient,
+        async_client_with_redis: AsyncClient,
         transaction_test_env: dict,
     ) -> None:
         headers = {"Authorization": f"Bearer {transaction_test_env['alice_token']}"}
@@ -232,7 +232,7 @@ class TestTransactionEndpoints:
             "note": "N" * 225,
         }
 
-        response_valid = await async_client.post(
+        response_valid = await async_client_with_redis.post(
             f"/api/v1/households/{transaction_test_env['household_id']}/transactions/",
             json=payload_valid,
             headers=headers,
@@ -244,7 +244,7 @@ class TestTransactionEndpoints:
             "type": "expense",
             "note": "N" * 226,
         }
-        response_invalid = await async_client.post(
+        response_invalid = await async_client_with_redis.post(
             f"/api/v1/households/{transaction_test_env['household_id']}/transactions/",
             json=payload_invalid,
             headers=headers,
@@ -254,7 +254,7 @@ class TestTransactionEndpoints:
 
     async def test_create_transaction_nonexistent_category(
         self,
-        async_client: AsyncClient,
+        async_client_with_redis: AsyncClient,
         transaction_test_env: dict,
     ) -> None:
         headers = {"Authorization": f"Bearer {transaction_test_env['alice_token']}"}
@@ -264,7 +264,7 @@ class TestTransactionEndpoints:
             "category_id": 999999,
         }
 
-        response = await async_client.post(
+        response = await async_client_with_redis.post(
             f"/api/v1/households/{transaction_test_env['household_id']}/transactions/",
             json=payload,
             headers=headers,
@@ -278,7 +278,7 @@ class TestTransactionEndpoints:
 
     async def test_create_transaction_foreign_category_cross_household_bola(
         self,
-        async_client: AsyncClient,
+        async_client_with_redis: AsyncClient,
         transaction_test_env: dict,
     ) -> None:
         headers = {"Authorization": f"Bearer {transaction_test_env['alice_token']}"}
@@ -288,7 +288,7 @@ class TestTransactionEndpoints:
             "category_id": transaction_test_env["foreign_category_id"],
         }
 
-        response = await async_client.post(
+        response = await async_client_with_redis.post(
             f"/api/v1/households/{transaction_test_env['household_id']}/transactions/",
             json=payload,
             headers=headers,
@@ -301,7 +301,7 @@ class TestTransactionEndpoints:
 
     async def test_create_transaction_viewer_forbidden(
         self,
-        async_client: AsyncClient,
+        async_client_with_redis: AsyncClient,
         transaction_test_env: dict,
     ) -> None:
         headers = {"Authorization": f"Bearer {transaction_test_env['viewer_token']}"}
@@ -310,7 +310,7 @@ class TestTransactionEndpoints:
             "type": "income",
         }
 
-        response = await async_client.post(
+        response = await async_client_with_redis.post(
             f"/api/v1/households/{transaction_test_env['household_id']}/transactions/",
             json=payload,
             headers=headers,
@@ -334,13 +334,13 @@ class TestTransactionEndpoints:
     )
     async def test_create_transaction_validation_errors(
         self,
-        async_client: AsyncClient,
+        async_client_with_redis: AsyncClient,
         transaction_test_env: dict,
         invalid_payload: dict,
     ) -> None:
         headers = {"Authorization": f"Bearer {transaction_test_env['alice_token']}"}
 
-        response = await async_client.post(
+        response = await async_client_with_redis.post(
             f"/api/v1/households/{transaction_test_env['household_id']}/transactions/",
             json=invalid_payload,
             headers=headers,
@@ -354,13 +354,13 @@ class TestTransactionEndpoints:
 
     async def test_get_transaction_by_id_happy_path(
         self,
-        async_client: AsyncClient,
+        async_client_with_redis: AsyncClient,
         transaction_test_env: dict,
         alice_transaction: Transaction,
     ) -> None:
         headers = {"Authorization": f"Bearer {transaction_test_env['viewer_token']}"}
 
-        response = await async_client.get(
+        response = await async_client_with_redis.get(
             f"/api/v1/households/{transaction_test_env['household_id']}/transactions/{alice_transaction.id}",
             headers=headers,
         )
@@ -373,12 +373,12 @@ class TestTransactionEndpoints:
 
     async def test_get_transaction_not_found(
         self,
-        async_client: AsyncClient,
+        async_client_with_redis: AsyncClient,
         transaction_test_env: dict,
     ) -> None:
         headers = {"Authorization": f"Bearer {transaction_test_env['owner_token']}"}
 
-        response = await async_client.get(
+        response = await async_client_with_redis.get(
             f"/api/v1/households/{transaction_test_env['household_id']}/transactions/999999",
             headers=headers,
         )
@@ -391,13 +391,13 @@ class TestTransactionEndpoints:
 
     async def test_get_transaction_cross_household_bola_protection(
         self,
-        async_client: AsyncClient,
+        async_client_with_redis: AsyncClient,
         transaction_test_env: dict,
         alice_transaction: Transaction,
     ) -> None:
         headers = {"Authorization": f"Bearer {transaction_test_env['owner_token']}"}
 
-        response = await async_client.get(
+        response = await async_client_with_redis.get(
             f"/api/v1/households/{transaction_test_env['foreign_household_id']}/transactions/{alice_transaction.id}",
             headers=headers,
         )
@@ -409,13 +409,13 @@ class TestTransactionEndpoints:
 
     async def test_get_all_transactions_happy_path(
         self,
-        async_client: AsyncClient,
+        async_client_with_redis: AsyncClient,
         transaction_test_env: dict,
         alice_transaction: Transaction,
     ) -> None:
         headers = {"Authorization": f"Bearer {transaction_test_env['bob_token']}"}
 
-        response = await async_client.get(
+        response = await async_client_with_redis.get(
             f"/api/v1/households/{transaction_test_env['household_id']}/transactions/",
             headers=headers,
         )
@@ -428,7 +428,7 @@ class TestTransactionEndpoints:
 
     async def test_patch_transaction_by_creator_member(
         self,
-        async_client: AsyncClient,
+        async_client_with_redis: AsyncClient,
         db_session: AsyncSession,
         transaction_test_env: dict,
         alice_transaction: Transaction,
@@ -436,7 +436,7 @@ class TestTransactionEndpoints:
         headers = {"Authorization": f"Bearer {transaction_test_env['alice_token']}"}
         payload = {"amount": 280000, "note": "Updated Electricity Bill"}
 
-        response = await async_client.patch(
+        response = await async_client_with_redis.patch(
             f"/api/v1/households/{transaction_test_env['household_id']}/transactions/{alice_transaction.id}",
             json=payload,
             headers=headers,
@@ -455,7 +455,7 @@ class TestTransactionEndpoints:
 
     async def test_patch_transaction_by_owner_on_member_transaction(
         self,
-        async_client: AsyncClient,
+        async_client_with_redis: AsyncClient,
         db_session: AsyncSession,
         transaction_test_env: dict,
         alice_transaction: Transaction,
@@ -463,7 +463,7 @@ class TestTransactionEndpoints:
         headers = {"Authorization": f"Bearer {transaction_test_env['owner_token']}"}
         payload = {"amount": 300000}
 
-        response = await async_client.patch(
+        response = await async_client_with_redis.patch(
             f"/api/v1/households/{transaction_test_env['household_id']}/transactions/{alice_transaction.id}",
             json=payload,
             headers=headers,
@@ -478,14 +478,14 @@ class TestTransactionEndpoints:
 
     async def test_patch_transaction_other_member_forbidden(
         self,
-        async_client: AsyncClient,
+        async_client_with_redis: AsyncClient,
         transaction_test_env: dict,
         alice_transaction: Transaction,
     ) -> None:
         headers = {"Authorization": f"Bearer {transaction_test_env['bob_token']}"}
         payload = {"amount": 999999}
 
-        response = await async_client.patch(
+        response = await async_client_with_redis.patch(
             f"/api/v1/households/{transaction_test_env['household_id']}/transactions/{alice_transaction.id}",
             json=payload,
             headers=headers,
@@ -499,7 +499,7 @@ class TestTransactionEndpoints:
 
     async def test_patch_transaction_type_income_resets_category(
         self,
-        async_client: AsyncClient,
+        async_client_with_redis: AsyncClient,
         db_session: AsyncSession,
         transaction_test_env: dict,
         alice_transaction: Transaction,
@@ -507,7 +507,7 @@ class TestTransactionEndpoints:
         headers = {"Authorization": f"Bearer {transaction_test_env['alice_token']}"}
         payload = {"type": "income"}
 
-        response = await async_client.patch(
+        response = await async_client_with_redis.patch(
             f"/api/v1/households/{transaction_test_env['household_id']}/transactions/{alice_transaction.id}",
             json=payload,
             headers=headers,
@@ -524,13 +524,13 @@ class TestTransactionEndpoints:
 
     async def test_delete_transaction_other_member_forbidden(
         self,
-        async_client: AsyncClient,
+        async_client_with_redis: AsyncClient,
         transaction_test_env: dict,
         alice_transaction: Transaction,
     ) -> None:
         headers = {"Authorization": f"Bearer {transaction_test_env['bob_token']}"}
 
-        response = await async_client.delete(
+        response = await async_client_with_redis.delete(
             f"/api/v1/households/{transaction_test_env['household_id']}/transactions/{alice_transaction.id}",
             headers=headers,
         )
@@ -543,14 +543,14 @@ class TestTransactionEndpoints:
 
     async def test_delete_transaction_by_creator_member(
         self,
-        async_client: AsyncClient,
+        async_client_with_redis: AsyncClient,
         db_session: AsyncSession,
         transaction_test_env: dict,
         alice_transaction: Transaction,
     ) -> None:
         headers = {"Authorization": f"Bearer {transaction_test_env['alice_token']}"}
 
-        response = await async_client.delete(
+        response = await async_client_with_redis.delete(
             f"/api/v1/households/{transaction_test_env['household_id']}/transactions/{alice_transaction.id}",
             headers=headers,
         )
@@ -564,14 +564,14 @@ class TestTransactionEndpoints:
 
     async def test_delete_transaction_by_owner(
         self,
-        async_client: AsyncClient,
+        async_client_with_redis: AsyncClient,
         db_session: AsyncSession,
         transaction_test_env: dict,
         alice_transaction: Transaction,
     ) -> None:
         headers = {"Authorization": f"Bearer {transaction_test_env['owner_token']}"}
 
-        response = await async_client.delete(
+        response = await async_client_with_redis.delete(
             f"/api/v1/households/{transaction_test_env['household_id']}/transactions/{alice_transaction.id}",
             headers=headers,
         )
@@ -585,12 +585,12 @@ class TestTransactionEndpoints:
 
     async def test_delete_transaction_not_found(
         self,
-        async_client: AsyncClient,
+        async_client_with_redis: AsyncClient,
         transaction_test_env: dict,
     ) -> None:
         headers = {"Authorization": f"Bearer {transaction_test_env['owner_token']}"}
 
-        response = await async_client.delete(
+        response = await async_client_with_redis.delete(
             f"/api/v1/households/{transaction_test_env['household_id']}/transactions/999999",
             headers=headers,
         )
@@ -603,7 +603,7 @@ class TestTransactionEndpoints:
 
     async def test_create_expense_transaction_budget_limit_exceeded(
         self,
-        async_client: AsyncClient,
+        async_client_with_redis: AsyncClient,
         transaction_test_env: dict,
     ) -> None:
         headers = {"Authorization": f"Bearer {transaction_test_env['alice_token']}"}
@@ -614,7 +614,7 @@ class TestTransactionEndpoints:
             "note": "Exceeding Budget",
         }
 
-        response = await async_client.post(
+        response = await async_client_with_redis.post(
             f"/api/v1/households/{transaction_test_env['household_id']}/transactions/",
             json=payload,
             headers=headers,

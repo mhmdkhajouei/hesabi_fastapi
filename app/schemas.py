@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import date, datetime
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -69,7 +69,7 @@ class TransactionBase(BaseModel):
 
 
 class TransactionCreate(TransactionBase):
-    pass
+    frequency: Literal["daily"] | None = Field(default=None, description="frequncy")
 
 
 class TransactionUpdate(BaseModel):
@@ -290,3 +290,128 @@ class TokenRefreshResponse(BaseModel):
     )
     access_token: str
     token_type: str = "bearer"
+
+
+class ReportFilters(BaseModel):
+    model_config = ConfigDict(
+        str_strip_whitespace=True,
+        json_schema_extra={
+            "example": {
+                "start_date": "2026-10-01",
+                "end_date": "2026-10-31",
+                "type": "expense",
+                "category_id": 5,
+            }
+        },
+    )
+    start_date: date | None = Field(default=None)
+    end_date: date | None = Field(default=None)
+    type: Literal["income", "expense"] | None = Field(default=None)
+    category_id: int | None = Field(default=None, gt=0)
+
+
+class ReportExportRequest(BaseModel):
+    model_config = ConfigDict(
+        json_schema_extra={
+            "example": {"filters": {"start_date": "2026-10-01", "type": "expense"}}
+        }
+    )
+    filters: ReportFilters | None = Field(default=None)
+
+
+class ReportJobResponse(BaseModel):
+    model_config = ConfigDict(
+        from_attributes=True,
+        json_schema_extra={
+            "example": {
+                "id": 1,
+                "status": "pending",
+                "file_path": None,
+                "error_message": None,
+                "filters": {"type": "expense"},
+                "created_at": "2026-10-25T12:00:00Z",
+                "completed_at": None,
+            }
+        },
+    )
+    id: int
+    status: Literal["pending", "processing", "completed", "failed"]
+    file_path: str | None = None
+    error_message: str | None = None
+    filters: dict | None = None
+    created_at: datetime
+    completed_at: datetime | None = None
+
+
+class RecurringTransactionBase(BaseModel):
+    model_config = ConfigDict(
+        str_strip_whitespace=True,
+        json_schema_extra={
+            "example": {
+                "amount": 15000000,
+                "type": "expense",
+                "next_run_date": "2026-11-01T10:00:00Z",
+                "note": "anything",
+                "category_id": 5,
+                "frequency": "daily",
+                "is_active": True,
+            }
+        },
+    )
+    amount: int = Field(gt=0, examples=[15000000])
+    type: Literal["income", "expense"] = Field(examples=["expense"])
+    next_run_date: datetime = Field(examples=["2026-11-01T10:00:00Z"])
+    note: str | None = Field(max_length=225, default=None, examples=["anything"])
+    category_id: int | None = Field(gt=0, default=None, examples=[5])
+    frequency: Literal["daily"] = Field(default="daily", examples=["daily"])
+    is_active: bool = Field(default=True, examples=[True])
+
+
+class RecurringTransactionCreate(RecurringTransactionBase):
+    pass
+
+
+class RecurringTransactionUpdate(BaseModel):
+    model_config = ConfigDict(
+        str_strip_whitespace=True,
+        json_schema_extra={
+            "example": {
+                "amount": 16000000,
+                "note": "anything",
+                "is_active": False,
+            }
+        },
+    )
+    amount: int | None = Field(gt=0, default=None, examples=[16000000])
+    type: Literal["income", "expense"] | None = Field(
+        default=None, examples=["expense"]
+    )
+    next_run_date: datetime | None = Field(
+        default=None, examples=["2026-12-01T10:00:00Z"]
+    )
+    note: str | None = Field(default=None, max_length=225, examples=["anything"])
+    category_id: int | None = Field(default=None, gt=0, examples=[5])
+    is_active: bool | None = Field(default=None, examples=[False])
+
+
+class RecurringTransactionResponse(RecurringTransactionBase):
+    model_config = ConfigDict(
+        from_attributes=True,
+        json_schema_extra={
+            "example": {
+                "id": 1,
+                "amount": 15000000,
+                "type": "expense",
+                "currency": "TOMAN",
+                "next_run_date": "2026-11-01T10:00:00Z",
+                "note": "anything",
+                "category_id": 5,
+                "frequency": "daily",
+                "is_active": True,
+                "created_at": "2026-10-27T14:30:00Z",
+            }
+        },
+    )
+    id: int = Field(gt=0, examples=[1])
+    currency: str = Field(default="TOMAN", examples=["TOMAN"])
+    created_at: datetime = Field(examples=["2026-10-27T14:30:00Z"])

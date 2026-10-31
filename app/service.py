@@ -1,8 +1,29 @@
-from datetime import UTC, datetime
+import csv
+import io
+from datetime import UTC, datetime, timedelta
+from pathlib import Path
 
-from app.db.database import HouseholdRole
+import aiofiles
+from redis.asyncio import Redis
+
+from app.broker import enqueue_recurring_transaction
+from app.cache import (
+    categories_key,
+    category_key,
+    deserialize,
+    invalidate_compute_cache,
+    serialize,
+    summary_key,
+)
+from app.db.database import HouseholdRole, JobStatus
 from app.db.uow import UnitOfWork
-from app.domain_models import CategoryDomain, TransactionDomain
+from app.domain_models import (
+    CategoryDomain,
+    RecurringTransactionDomain,
+    ReportFiltersDomain,
+    ReportJobDomain,
+    TransactionDomain,
+)
 from app.errors.exceptions import (
     AuthenticationError,
     BusinessRuleError,
@@ -13,6 +34,10 @@ from app.schemas import (
     CategoryCreate,
     CategoryResponse,
     CategoryUpdate,
+    RecurringTransactionResponse,
+    RecurringTransactionUpdate,
+    ReportFilters,
+    ReportJobResponse,
     Token,
     TokenRefreshRequest,
     TokenRefreshResponse,
@@ -36,8 +61,9 @@ from app.security import (
 
 
 class CategoryService:
-    def __init__(self, uow: UnitOfWork):
+    def __init__(self, uow: UnitOfWork, redis: Redis):
         self.uow = uow
+        self.redis = redis
 
     async def add_category(
         self, household_id: int, category: CategoryCreate
@@ -50,7 +76,10 @@ class CategoryService:
             )
 
             cg = await self.uow.categories.insert_category(category=cd)
-            return CategoryResponse.model_validate(cg)
+            response = CategoryResponse.model_validate(cg)
+
+        await invalidate_compute_cache(self.redis, household_id)
+        return response
 
     async def edit_category(
         self, household_id: int, category_id: int, data: CategoryUpdate
@@ -72,7 +101,10 @@ class CategoryService:
                 household_id=household_id,
             )
             cg = await self.uow.categories.update_category(category, cd)
-            return CategoryResponse.model_validate(cg)
+            response = CategoryResponse.model_validate(cg)
+
+        await invalidate_compute_cache(self.redis, household_id, [category_id])
+        return response
 
     async def delete_category(self, household_id: int, category_id: int) -> None:
         async with self.uow:
@@ -85,6 +117,7 @@ class CategoryService:
                     message=f"Category with ID {category_id} not found",
                     error_code="CATEGORY_NOT_FOUND",
                 )
+        await invalidate_compute_cache(self.redis, household_id, [category_id])
 
     async def get_category(
         self, household_id: int, category_id: int
@@ -105,11 +138,16 @@ class CategoryService:
 
 
 class TransactionService:
-    def __init__(self, uow: UnitOfWork):
+    def __init__(self, uow: UnitOfWork, redis: Redis):
         self.uow = uow
+        self.redis = redis
 
     async def add_transaction(
-        self, household_id: int, user_id: int, data: TransactionCreate
+        self,
+        household_id: int,
+        user_id: int,
+        data: TransactionCreate,
+        user_role: HouseholdRole,
     ) -> TransactionResponse:
 
         async with self.uow:
@@ -150,7 +188,42 @@ class TransactionService:
                                 error_code="BUDGET_LIMIT_EXCEEDED",
                             )
             tn = await self.uow.transactions.insert_transaction(tx)
-            return TransactionResponse.model_validate(tn)
+            response = TransactionResponse.model_validate(tn)
+
+            template_id = None
+            delay_seconds = 0
+            if data.frequency is not None:
+                if user_role != HouseholdRole.OWNER:
+                    raise ForbiddenError(
+                        message="Only the household owner can create recurring transactions",
+                        error_code="OWNER_PERMISSION_REQUIRED",
+                    )
+                next_run = tx_date + timedelta(days=1)
+
+                template_domain = RecurringTransactionDomain(
+                    household_id=household_id,
+                    created_by=user_id,
+                    amount=data.amount,
+                    type=data.type,
+                    category_id=data.category_id,
+                    note=data.note,
+                    frequency=data.frequency,
+                    next_run_date=next_run,
+                    is_active=True,
+                )
+                template = await self.uow.recurring_transactions.insert_template(
+                    template_domain
+                )
+                template_id = template.id
+
+                delay_seconds = (next_run - datetime.now(UTC)).total_seconds()
+
+        await invalidate_compute_cache(self.redis, household_id, [tx.category_id])
+
+        if template_id is not None:
+            enqueue_recurring_transaction(template_id, delay_seconds)
+
+        return response
 
     async def edit_transaction(
         self,
@@ -177,6 +250,7 @@ class TransactionService:
                     message="You can only edit your own transaction",
                     error_code="INSUFFICIENT_PERMISSIONS",
                 )
+            old_category_id = transaction.category_id
 
             update_data = data.model_dump(exclude_unset=True)
 
@@ -240,7 +314,12 @@ class TransactionService:
                             )
 
             tn = await self.uow.transactions.update_transaction(transaction, tx)
-            return TransactionResponse.model_validate(tn)
+            response = TransactionResponse.model_validate(tn)
+
+        await invalidate_compute_cache(
+            self.redis, household_id, [old_category_id, tx.category_id]
+        )
+        return response
 
     async def delete_transaction(
         self,
@@ -266,6 +345,7 @@ class TransactionService:
                     message="You can only delete your own transaction",
                     error_code="INSUFFICIENT_PERMISSIONS",
                 )
+            category_id = transaction.category_id
 
             deleted = await self.uow.transactions.delete_transaction(
                 household_id, transaction_id
@@ -276,6 +356,7 @@ class TransactionService:
                     message=f"Transaction with id {transaction_id} not found",
                     error_code="TRANSACTION_NOT_FOUND",
                 )
+        await invalidate_compute_cache(self.redis, household_id, [category_id])
 
     async def get_transaction(
         self, household_id: int, transaction_id: int
@@ -301,10 +382,18 @@ class TransactionService:
 
 
 class ComputeService:
-    def __init__(self, uow: UnitOfWork):
+    CACHE_TTL = 60
+
+    def __init__(self, uow: UnitOfWork, redis: Redis):
         self.uow = uow
+        self.redis = redis
 
     async def get_financial_summary(self, household_id: int) -> dict:
+        cache_key = summary_key(household_id)
+        cached = await self.redis.get(cache_key)
+        if cached:
+            return deserialize(cached)
+
         async with self.uow:
             income = await self.uow.compute.get_total_amount_by_type(
                 household_id, "income"
@@ -313,9 +402,18 @@ class ComputeService:
                 household_id, "expense"
             )
 
-            return {"income": income, "expense": expense, "total": income - expense}
+            result = {"income": income, "expense": expense, "total": income - expense}
+
+        await self.redis.set(cache_key, serialize(result), ex=self.CACHE_TTL)
+        return result
 
     async def category_balance(self, household_id: int, category_id: int) -> dict:
+        cache_key = category_key(household_id, category_id)
+        cached = await self.redis.get(cache_key)
+
+        if cached:
+            return deserialize(cached)
+
         async with self.uow:
             row = await self.uow.compute.get_category_balance(household_id, category_id)
             if not row:
@@ -330,9 +428,15 @@ class ComputeService:
                 "spent": row["spent"],
                 "remaining": row["budget_goal"] - row["spent"],
             }
-            return result
+        await self.redis.set(cache_key, serialize(result), ex=self.CACHE_TTL)
+        return result
 
     async def categories_balance(self, household_id: int) -> list[dict]:
+        cache_key = categories_key(household_id)
+        cached = await self.redis.get(cache_key)
+        if cached:
+            return deserialize(cached)
+
         async with self.uow:
             rows = await self.uow.compute.get_all_categories_balance(household_id)
             result = []
@@ -346,8 +450,8 @@ class ComputeService:
                         "remaining": row["budget_goal"] - row["spent"],
                     }
                 )
-
-            return result
+        await self.redis.set(cache_key, serialize(result), ex=self.CACHE_TTL)
+        return result
 
 
 class UserService:
@@ -456,3 +560,277 @@ class HouseholdService:
     async def get_personal_household_id(self, user_id: int) -> int | None:
         async with self.uow:
             return await self.uow.household.get_personal_household_id(user_id)
+
+
+class ReportJobsService:
+    def __init__(self, uow: UnitOfWork):
+        self.uow = uow
+
+    async def create_job(
+        self, household_id: int, user_id: int, filters: ReportFilters | None
+    ) -> ReportJobResponse:
+        domain_filters = None
+        if filters:
+            domain_filters = ReportFiltersDomain(
+                start_date=filters.start_date,
+                end_date=filters.end_date,
+                type=filters.type,
+                category_id=filters.category_id,
+            )
+
+        async with self.uow:
+            domain = ReportJobDomain(
+                household_id=household_id,
+                requested_by=user_id,
+                filters=domain_filters,
+            )
+            job = await self.uow.reports.insert_report_job(domain)
+            response = ReportJobResponse.model_validate(job)
+
+        return response
+
+    async def get_job_status(
+        self, household_id: int, job_id: int, user_id: int
+    ) -> ReportJobResponse:
+        async with self.uow:
+            job = await self.uow.reports.get_report_job_by_id(job_id=job_id)
+
+            if (
+                not job
+                or job.household_id != household_id
+                or job.requested_by != user_id
+            ):
+                raise NotFoundError(
+                    message="Report job not found",
+                    error_code="REPORT_NOT_FOUND",
+                )
+
+            return ReportJobResponse.model_validate(job)
+
+    async def get_report_file_path(
+        self, household_id: int, job_id: int, user_id: int
+    ) -> Path:
+        async with self.uow:
+            job = await self.get_job_status(household_id, job_id, user_id)
+
+            if job.status != JobStatus.COMPLETED or not job.file_path:
+                raise BusinessRuleError(
+                    message="Report is not ready for download yet.",
+                    error_code="REPORT_NOT_READY",
+                )
+            base_dir = Path("data/reports").resolve()
+            file_path = Path(job.file_path).resolve()
+
+            if not file_path.is_relative_to(base_dir):
+                raise BusinessRuleError(
+                    message="Invalid report file path.",
+                    error_code="INVALID_FILE_PATH",
+                )
+            if not file_path.exists():
+                raise NotFoundError(
+                    message="Report file not found on disk",
+                    error_code="REPORT_FILE_MISSING",
+                )
+            return file_path
+
+    async def process_report(self, job_id: int) -> None:
+        async with self.uow:
+            job = await self.uow.reports.get_report_job_by_id(job_id=job_id)
+            if not job:
+                return
+
+            await self.uow.reports.update_job_status(job_id, JobStatus.PROCESSING)
+            await self.uow.session.commit()
+
+            try:
+                filters = ReportFiltersDomain.from_dict(job.filters)
+                transactions = await self.uow.reports.get_transaction_for_report(
+                    job.household_id, filters
+                )
+
+                reports_dir = Path("data/reports")
+                reports_dir.mkdir(parents=True, exist_ok=True)
+                file_path = reports_dir / f"report_{job_id}.csv"
+
+                async with aiofiles.open(
+                    file_path, mode="w", newline="", encoding="utf-8"
+                ) as f:
+                    output = io.StringIO()
+                    writer = csv.writer(output)
+                    writer.writerow(
+                        ["ID", "Amount", "Type", "Category", "Creator", "Date", "Note"]
+                    )
+                    for tx in transactions:
+                        writer.writerow(
+                            [
+                                tx.id,
+                                tx.amount,
+                                tx.type,
+                                tx.category.name if tx.category else "N/A",
+                                tx.creator.name if tx.creator else "N/A",
+                                tx.date.isoformat(),
+                                tx.note or "",
+                            ]
+                        )
+                    await f.write(output.getvalue())
+
+                await self.uow.reports.update_job_status(
+                    job_id, JobStatus.COMPLETED, file_path=str(file_path)
+                )
+
+            except Exception as e:
+                await self.uow.reports.update_job_status(
+                    job_id, JobStatus.FAILED, error_message=str(e)
+                )
+                await self.uow.session.commit()
+                raise
+
+
+class RecurringTransactionService:
+    def __init__(self, uow: UnitOfWork, redis: Redis):
+        self.uow = uow
+        self.redis = redis
+
+    async def get_all_templates(
+        self, household_id: int
+    ) -> list[RecurringTransactionResponse]:
+        async with self.uow:
+            templates = await self.uow.recurring_transactions.get_all_templates(
+                household_id
+            )
+            return [RecurringTransactionResponse.model_validate(t) for t in templates]
+
+    async def update_template(
+        self,
+        household_id: int,
+        template_id: int,
+        user_id: int,
+        user_role: HouseholdRole,
+        data: RecurringTransactionUpdate,
+    ) -> RecurringTransactionResponse:
+        if user_role != HouseholdRole.OWNER:
+            raise ForbiddenError(
+                message="Only the household owner can update recurring templates",
+                error_code="OWNER_PERMISSION_REQUIRED",
+            )
+
+        async with self.uow:
+            template = await self.uow.recurring_transactions.get_template_by_id(
+                household_id, template_id
+            )
+            if not template:
+                raise NotFoundError(
+                    message=f"Recurring template with ID {template_id} not found",
+                    error_code="RECURRING_TEMPLATE_NOT_FOUND",
+                )
+
+            update_data = data.model_dump(exclude_unset=True)
+            updated_amount = update_data.get("amount", template.amount)
+            updated_type = update_data.get("type", template.type)
+            updated_category_id = update_data.get("category_id", template.category_id)
+            updated_note = update_data.get("note", template.note)
+            updated_is_active = update_data.get("is_active", template.is_active)
+            updated_next_run = update_data.get("next_run_date", template.next_run_date)
+
+            updated_domain = RecurringTransactionDomain(
+                household_id=household_id,
+                created_by=template.created_by,
+                amount=updated_amount,
+                type=updated_type,
+                category_id=updated_category_id,
+                note=updated_note,
+                frequency=template.frequency,
+                next_run_date=updated_next_run,
+                is_active=updated_is_active,
+            )
+
+            if updated_domain.category_id is not None:
+                exist = await self.uow.categories.check_category(
+                    household_id,
+                    updated_domain.category_id,
+                )
+                if not exist:
+                    raise NotFoundError(
+                        message=f"Category with ID {updated_domain.category_id} not found",
+                        error_code="CATEGORY_NOT_FOUND",
+                    )
+                if updated_domain.type == "expense":
+                    budget = await self.uow.budgets.get_budget_by_category_id(
+                        category_id=updated_domain.category_id,
+                        for_update=True,
+                    )
+                    if budget and updated_domain.amount > budget.goal:
+                        raise BusinessRuleError(
+                            message="Template amount exceeds category budget goal",
+                            error_code="BUDGET_LIMIT_EXCEEDED",
+                        )
+            template.amount = updated_domain.amount
+            template.type = updated_domain.type
+            template.category_id = updated_domain.category_id
+            template.note = updated_domain.note
+            template.next_run_date = updated_domain.next_run_date
+            template.is_active = updated_domain.is_active
+
+            await self.uow.session.flush()
+            await self.uow.session.refresh(template)
+            return RecurringTransactionResponse.model_validate(template)
+
+    async def delete_template(
+        self,
+        household_id: int,
+        template_id: int,
+        user_id: int,
+        user_role: HouseholdRole,
+    ) -> None:
+        if user_role != HouseholdRole.OWNER:
+            raise ForbiddenError(
+                message="Only the household owner can delete recurring templates",
+                error_code="OWNER_PERMISSION_REQUIRED",
+            )
+        async with self.uow:
+            deleted = await self.uow.recurring_transactions.delete_template(
+                household_id, template_id
+            )
+            if not deleted:
+                raise NotFoundError(
+                    message=f"Recurring template with ID {template_id} not found",
+                    error_code="RECURRING_TEMPLATE_NOT_FOUND",
+                )
+
+    async def process_single_template(self, template_id: int) -> None:
+        next_date = None
+
+        async with self.uow:
+            template = await self.uow.recurring_transactions.get_by_id(template_id)
+
+            if not template or not template.is_active:
+                return
+
+            now = datetime.now(UTC)
+            if template.next_run_date > now:
+                return
+
+            tx_domain = TransactionDomain(
+                amount=template.amount,
+                household_id=template.household_id,
+                created_by=template.created_by,
+                type=template.type,
+                category_id=template.category_id,
+                note=template.note,
+                date=template.next_run_date,
+            )
+            await self.uow.transactions.insert_transaction(tx_domain)
+
+            next_date = template.next_run_date + timedelta(days=1)
+            await self.uow.recurring_transactions.update_next_run_date(
+                template, next_date
+            )
+
+        if tx_domain.household_id is not None:
+            await invalidate_compute_cache(
+                self.redis, tx_domain.household_id, [tx_domain.category_id]
+            )
+
+        if next_date is not None:
+            delay_seconds = max(0.0, (next_date - datetime.now(UTC)).total_seconds())
+            enqueue_recurring_transaction(template_id, delay_seconds)
