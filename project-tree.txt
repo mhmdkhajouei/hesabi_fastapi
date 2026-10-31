@@ -1,0 +1,176 @@
+.
+├── .dockerignore
+├── .DS_Store
+├── .env.example
+├── .env.test
+├── .envrc
+├── .gitignore
+├── .idea
+│   ├── .gitignore
+│   ├── .name
+│   ├── dbnavigator.xml
+│   ├── hesabi_v_fasapi.iml
+│   ├── inspectionProfiles
+│   │   └── profiles_settings.xml
+│   ├── misc.xml
+│   ├── modules.xml
+│   ├── pyProjectModel.xml
+│   ├── vcs.xml
+│   └── workspace.xml
+├── .python-version
+├── alembic
+│   ├── .DS_Store
+│   ├── env.py
+│   ├── README
+│   ├── script.py.mako
+│   └── versions
+│       ├── .DS_Store
+│       ├── 072568cc4f38_create_initial_tables.py
+│       ├── 080bc15340e5_create_household_table.py
+│       ├── 36a7738628ec_add_index_transaction_household_id_date_.py
+│       ├── 96c43a2780d4_.py
+│       ├── a56d31f36be2_add_report_jobs_table.py
+│       ├── aaf42af77100_create_rbac.py
+│       ├── c862ae3c91d6_create_table_users.py
+│       └── fa3f3960f2ea_add_recurring_transaction_table.py
+├── alembic.ini
+├── app
+│   ├── __init__.py
+│   ├── .DS_Store
+│   ├── api
+│   │   ├── __init__.py
+│   │   ├── .DS_Store
+│   │   └── v1
+│   │       ├── __init__.py
+│   │       ├── .DS_Store
+│   │       ├── endpoints
+│   │       │   ├── __init__.py
+│   │       │   ├── .DS_Store
+│   │       │   ├── auth.py
+│   │       │   ├── category.py
+│   │       │   ├── compute.py
+│   │       │   ├── recurring_transaction.py
+│   │       │   ├── reports.py
+│   │       │   ├── transaction.py
+│   │       │   └── users.py
+│   │       ├── openapi.json
+│   │       └── router.py
+│   ├── broker.py
+│   ├── cache.py
+│   ├── config.py
+│   ├── db
+│   │   ├── __init__.py
+│   │   ├── .DS_Store
+│   │   ├── crud.py
+│   │   ├── database.py
+│   │   ├── redis.py
+│   │   └── uow.py
+│   ├── dependencies.py
+│   ├── domain_models.py
+│   ├── errors
+│   │   ├── __init__.py
+│   │   ├── .DS_Store
+│   │   ├── exceptions.py
+│   │   └── handlers.py
+│   ├── main.py
+│   ├── middleware.py
+│   ├── schemas.py
+│   ├── security.py
+│   ├── service.py
+│   ├── validators.py
+│   └── worker.py
+├── certs
+│   ├── private_key.pem
+│   └── public_key.pem
+├── data
+│   └── reports
+│       ├── report_1001.csv
+│       └── report_1002.csv
+├── docker-compose.yml
+├── Dockerfile
+├── docs
+│   ├── .DS_Store
+│   ├── decisions
+│   │   ├── .DS_Store
+│   │   ├── 001_use_fastapi_framework.md
+│   │   ├── 002_use_postgresql_database.md
+│   │   ├── 003_use_alembic_migration.md
+│   │   ├── 004_use_pydantic_settings.md
+│   │   ├── 005_use_exception_error_handling.md
+│   │   ├── 006_use_api_versioning_strategy.md
+│   │   ├── 007_use_rs256_rotation_ttl.md
+│   │   ├── 008_use_rbac_role_permision.md
+│   │   ├── 009_bola_prevention_ownership_pattern.md
+│   │   ├── 010_diamond_pytest_strategy.md
+│   │   ├── 011_locking_strategy_concurrent_updates.md
+│   │   ├── 012_indexing_decisions_query_plans_revised.md
+│   │   ├── 013_caching_tool_&_strategy.md
+│   │   ├── 014_backgorund_job_&_broker.md
+│   │   └── 015_recurring_transactions_dramatiq_delay_message.md
+│   ├── explain_after.md
+│   ├── explain_baseline.md
+│   ├── explain_new_features_after.md
+│   ├── explain_new_features_baseline.md
+│   ├── GIT_WORKFLOW.md
+│   ├── hesabi-24-point-roadmap.md
+│   ├── Household RBAC & BOLA Access Matrix.md
+│   ├── index_finding.md
+│   ├── report_1001_example.csv
+│   └── VERSIONING.md
+├── Makefile
+├── project-tree.txt
+├── pyproject.toml
+├── README.md
+├── requirements-policy.txt
+├── sandbox
+│   ├── __init__.py
+│   ├── .DS_Store
+│   ├── async_req.py
+│   ├── concurrent_race.py
+│   ├── cors_test.py
+│   ├── dramatiq_dlq.py
+│   ├── errors_test.py
+│   ├── explain_queries.py
+│   ├── rbac_test.py
+│   ├── redis_cache.py
+│   ├── seed.py
+│   ├── test_auth_manual.py
+│   └── test_sandbox.py
+├── tests
+│   ├── __init__.py
+│   ├── .DS_Store
+│   ├── contract
+│   │   ├── __init__.py
+│   │   ├── .DS_Store
+│   │   └── test_all.py
+│   ├── integration
+│   │   ├── __init__.py
+│   │   ├── .DS_Store
+│   │   ├── conftest.py
+│   │   ├── test_auth_endpoint.py
+│   │   ├── test_auth_service.py
+│   │   ├── test_cache.py
+│   │   ├── test_category_endpoint.py
+│   │   ├── test_compute_endpoint.py
+│   │   ├── test_concurrency.py
+│   │   ├── test_middleware.py
+│   │   ├── test_recurring_transaction_endpoint.py
+│   │   ├── test_recurring_transaction_service.py
+│   │   ├── test_recurring_worker.py
+│   │   ├── test_redis_lifespan.py
+│   │   ├── test_report_endpoint.py
+│   │   ├── test_report_service.py
+│   │   ├── test_trans_cat_comp_service.py
+│   │   ├── test_transaction_endpoint.py
+│   │   ├── test_user_endpoint.py
+│   │   └── test_user_service.py
+│   └── unit
+│       ├── __init__.py
+│       ├── .DS_Store
+│       ├── test_config.py
+│       ├── test_domain_models.py
+│       ├── test_security.py
+│       └── test_validators.py
+└── uv.lock
+
+21 directories, 153 files

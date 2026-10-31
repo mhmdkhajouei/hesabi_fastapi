@@ -60,11 +60,11 @@ async def get_report_status(
     status_code=status.HTTP_200_OK,
     response_class=FileResponse,
 )
-async def downaload_report(
+async def download_report(
     household_id: Annotated[int, Path(gt=0)],
     job_id: Annotated[int, Path(gt=0)],
     current_user: CurrentUser,
-    service: Annotated[ReportJobResponse, Depends(get_report_service)],
+    service: Annotated[ReportJobsService, Depends(get_report_service)],
 ):
     file_path = await service.get_report_file_path(
         household_id=household_id,

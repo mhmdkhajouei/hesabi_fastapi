@@ -25,6 +25,10 @@ env/
 .env
 .env.*
 !.env.example
+!.env.test
+
+# direnv
+.envrc
 
 # IDEs / editors
 .idea/
@@ -52,6 +56,8 @@ htmlcov/
 .ruff_cache/
 .pyre/
 .pytype/
+# (اگر از pyrefly استفاده می‌کنی و فایل کانفیگش رو ساختی، این خط رو از کامنت خارج کن)
+# pyrefly.toml
 
 # Logs
 logs/
@@ -65,5 +71,12 @@ logs/
 # Local Docker persistence, if you ever use bind mounts
 pgdata/
 postgres_data/
+redis_data/
+
+# Reports / generated files (اگر نمی‌خواهی فایل‌های CSV گزارش‌ها کامیت بشن)
+data/reports/
+*.csv
+
+# Certificates (کلیدهای خصوصی)
 /certs/private_key.pem
 /certs
